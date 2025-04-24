@@ -1,22 +1,44 @@
-<script setup>
-import GedcomTree from './components/GedcomTree.vue';
-</script>
-
 <template>
-  <GedcomTree />
+  <v-app :theme="darkMode ? 'dark' : 'light'">
+    <v-app-bar app>
+      <v-app-bar-title>Árbol Genealógico Material</v-app-bar-title>
+      <v-spacer></v-spacer>
+      <v-btn :icon="darkMode ? 'mdi-weather-night' : 'mdi-weather-sunny'" @click="toggleDarkMode"></v-btn>
+    </v-app-bar>
+    <v-main>
+      <GedcomTree />
+    </v-main>
+  </v-app>
 </template>
 
-<style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+<script setup>
+import { ref } from 'vue';
+import GedcomTree from './components/GedcomTree.vue'; // Import the component
+import { useTheme } from 'vuetify'
+
+const theme = useTheme();
+const darkMode = ref(false); // Or read from localStorage/preference
+
+const toggleDarkMode = () => {
+  darkMode.value = !darkMode.value;
+  theme.global.name.value = darkMode.value ? 'dark' : 'light';
+};
+
+// Initialize theme based on darkMode ref
+theme.global.name.value = darkMode.value ? 'dark' : 'light';
+
+</script>
+
+<style>
+/* Global styles if needed */
+html, body, #app, .v-application {
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
+
+.v-main {
+  height: calc(100vh - 64px); /* Adjust based on your app bar height */
+  overflow-y: auto;
 }
 </style>
