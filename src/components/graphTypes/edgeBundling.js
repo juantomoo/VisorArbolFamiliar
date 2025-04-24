@@ -16,11 +16,10 @@ export function renderAgrupamientoRelacional(rootData, container, width, height,
   }
 
   // Calcular el radio dinámico basado en el número de nodos
-  const nodeCount = rootData.nodes ? rootData.nodes.length : rootData.descendants().length;
-  const baseRadius = Math.min(width, height) / 2 * 0.85; // Radio base
-  const dynamicRadius = Math.min(baseRadius + nodeCount * 2, baseRadius * 2); // Ajustar con límites
-
-  // Configuración del gráfico
+  const totalNodes = rootData.descendants ? rootData.descendants().length : (rootData.nodes ? rootData.nodes.length : 1);
+  // Radio base más un factor por nodo, con un máximo para evitar que se salga del SVG
+  const baseRadius = Math.min(width, height) / 2 * 0.85;
+  const dynamicRadius = Math.min(baseRadius + totalNodes * 10, Math.max(width, height) * 0.95);
   const radius = dynamicRadius;
 
   // Verificar si los datos provienen de una selección de familia (formato { nodes, links })
@@ -77,71 +76,100 @@ export function renderAgrupamientoRelacional(rootData, container, width, height,
     // Convertir a estructura jerárquica para D3
     root = d3.hierarchy(root);
   } else {
-    // --- NUEVO: Construir un mapa único de personas por id ---
-    function buildUniqueNodeMap(data) {
-      const map = new Map();
-      function visit(person) {
-        if (!person || !person.id) return;
-        if (!map.has(person.id)) {
-          // Clonar solo los datos básicos, sin hijos ni padres aún
-          map.set(person.id, {
-            ...person,
-            children: [],
-            _parents: person._parents ? [...person._parents] : [],
-            spouses: person.spouses ? [...person.spouses] : [],
-          });
-          // Recorrer hijos y padres
-          if (person.children) person.children.forEach(visit);
-          if (person._parents) person._parents.forEach(visit);
-          if (person.spouses) person.spouses.forEach(visit);
-        }
-      }
-      visit(data);
-      return map;
+    // --- NUEVO: Normalizar input si ya es un d3.hierarchy Node ---
+    function isD3HierarchyNode(obj) {
+      return obj && typeof obj === 'object' && 'data' in obj && 'depth' in obj && 'height' in obj && 'children' in obj;
     }
 
-    // --- NUEVO: Construir la jerarquía usando nodos únicos ---
-    function buildHierarchy(rootData, uniqueMap) {
-      function buildNode(person) {
-        const node = uniqueMap.get(person.id);
-        // Evitar loops infinitos
-        if (!node || node._visited) return null;
-        node._visited = true;
-        // Construir hijos usando nodos únicos
-        node.children = (person.children || [])
-          .map(child => buildNode(uniqueMap.get(child.id) || child))
-          .filter(Boolean);
-        return node;
-      }
-      // Limpiar marcas de visitado
-      uniqueMap.forEach(n => { delete n._visited; });
-      return buildNode(rootData);
-    }
-
-    // --- NUEVO: Crear nodos d3.hierarchy solo para nodos únicos ---
-    function hierarchyFromUnique(rootNode) {
-      // Asegura que todos los nodos tengan children como array (aunque sea vacío)
-      function ensureChildren(node) {
-        if (!Array.isArray(node.children)) node.children = [];
-        node.children.forEach(child => {
-          if (child) ensureChildren(child);
-        });
-      }
-      ensureChildren(rootNode);
-      return d3.hierarchy(rootNode, d => Array.isArray(d.children) ? d.children : []);
-    }
-
-    // --- NUEVO: Usar el sistema de nodos únicos en todo el flujo ---
-    // Solo para el modo árbol completo (no familia seleccionada)
-    let uniqueMap;
-    if (!isFamilySelection) {
-      uniqueMap = buildUniqueNodeMap(rootData);
-      root = buildHierarchy(rootData, uniqueMap);
-      root = hierarchyFromUnique(root);
+    if (isD3HierarchyNode(rootData)) {
+      // El input ya es un nodo d3.hierarchy, úsalo directamente
+      root = rootData;
+      nodes = root.leaves ? root.leaves() : [];
     } else {
-      // Datos completos del árbol, usar estructura jerárquica normal
-      root = d3.hierarchy(rootData);
-      nodes = root.descendants().filter(n => !n.children || n.children.length === 0);
+      // ...pipeline de construcción de jerarquía existente...
+      // --- NUEVO: Construir un mapa único de personas por id ---
+      function buildUniqueNodeMap(data) {
+        const map = new Map();
+        function visit(person) {
+          if (!person || !person.id) return;
+          if (!map.has(person.id)) {
+            // Clonar solo los datos básicos, sin hijos ni padres aún
+            map.set(person.id, {
+              ...person,
+              children: [],
+              _parents: person._parents ? [...person._parents] : [],
+              spouses: person.spouses ? [...person.spouses] : [],
+            });
+            // Recorrer hijos y padres
+            if (person.children) person.children.forEach(visit);
+            if (person._parents) person._parents.forEach(visit);
+            if (person.spouses) person.spouses.forEach(visit);
+          }
+        }
+        visit(data);
+        return map;
+      }
+
+      // --- NUEVO: Construir la jerarquía usando nodos únicos ---
+      function buildHierarchy(rootData, uniqueMap) {
+        function buildNode(person) {
+          const node = uniqueMap.get(person.id);
+          // Evitar loops infinitos
+          if (!node || node._visited) return null;
+          node._visited = true;
+          // Construir hijos usando nodos únicos
+          node.children = (person.children || [])
+            .map(child => buildNode(uniqueMap.get(child.id) || child))
+            .filter(Boolean); // <-- FILTRA hijos nulos AQUÍ
+          return node;
+        }
+        // Limpiar marcas de visitado
+        uniqueMap.forEach(n => { delete n._visited; });
+        const rootNode = buildNode(rootData);
+        // Limpieza extra: elimina hijos nulos en toda la estructura
+        function cleanNullChildren(node) {
+          if (!node || typeof node !== 'object') return;
+          if (!Array.isArray(node.children)) node.children = [];
+          node.children = node.children.filter(child => child && typeof child === 'object');
+          node.children.forEach(child => cleanNullChildren(child));
+        }
+        cleanNullChildren(rootNode);
+        return rootNode;
+      }
+
+      // --- NUEVO: Crear nodos d3.hierarchy solo para nodos únicos ---
+      function hierarchyFromUnique(rootNode) {
+        // Solución robusta: ignora hijos nulos y asegura children siempre es array
+        function ensureChildrenSafe(node) {
+          if (!node || typeof node !== 'object') return;
+          // Si children es null o no array, pon array vacío
+          if (!Array.isArray(node.children)) node.children = [];
+          // Filtra hijos nulos o no-objeto
+          node.children = node.children.filter(child => child && typeof child === 'object');
+          node.children.forEach(child => ensureChildrenSafe(child));
+        }
+        ensureChildrenSafe(rootNode);
+        // Si rootNode es null, abortar y mostrar error
+        if (!rootNode) {
+          console.error('Error: rootNode es null o inválido antes de pasar a d3.hierarchy.');
+          return null;
+        }
+        // El callback de d3.hierarchy también filtra hijos nulos
+        return d3.hierarchy(rootNode, d => Array.isArray(d.children) ? d.children.filter(c => c && typeof c === 'object') : []);
+      }
+
+      // --- NUEVO: Usar el sistema de nodos únicos en todo el flujo ---
+      // Solo para el modo árbol completo (no familia seleccionada)
+      let uniqueMap;
+      if (!isFamilySelection) {
+        uniqueMap = buildUniqueNodeMap(rootData);
+        root = buildHierarchy(rootData, uniqueMap);
+        root = hierarchyFromUnique(root);
+      } else {
+        // Datos completos del árbol, usar estructura jerárquica normal
+        root = d3.hierarchy(rootData);
+        nodes = root.descendants().filter(n => !n.children || n.children.length === 0);
+      }
     }
   }
   
@@ -155,12 +183,43 @@ export function renderAgrupamientoRelacional(rootData, container, width, height,
   // Crear un mapa de nodos por ID para referencia rápida
   function createNodeMap(root) {
     const idMap = new Map();
-    // Usar todos los nodos únicos
-    root.descendants().forEach(node => {
-      if (node.data.id) {
-        idMap.set(node.data.id, node);
-      }
-    });
+    
+    // Si rootData.nodes existe, usar directamente estos datos (vista de familia)
+    if (isFamilySelection && rootData.nodes) {
+      rootData.nodes.forEach(node => {
+        if (node && node.id) {
+          idMap.set(node.id, {
+            data: node,
+            depth: 0,
+            height: 0
+          });
+        }
+      });
+      return idMap;
+    }
+
+    // Usar todos los nodos únicos - modificación importante: usar datos originales si están disponibles
+    if (rootData.nodes && !isFamilySelection) {
+      // Si rootData tiene un array de nodos (datos originales), úsalos directamente
+      rootData.nodes.forEach(node => {
+        if (node && node.id) {
+          // Crear un pseudo-nodo de jerarquía con la estructura que bilink espera
+          idMap.set(node.id, {
+            data: node,
+            depth: 0,
+            height: 0
+          });
+        }
+      });
+    } else {
+      // Usar el enfoque de descendientes como fallback
+      root.descendants().forEach(node => {
+        if (node.data && node.data.id) {
+          idMap.set(node.data.id, node);
+        }
+      });
+    }
+    
     return idMap;
   }
 
@@ -301,13 +360,113 @@ export function renderAgrupamientoRelacional(rootData, container, width, height,
     return root;
   }
   
+  // Obtener todas las relaciones posibles (padres, hijos, cónyuges) entre todos los nodos reales (no raíz artificial)
+  function getAllRelations(root) {
+    const idMap = createNodeMap(root);
+    const relations = [];
+    // Saltar el nodo raíz artificial (el primero, que no tiene id real)
+    const nodes = root.descendants().filter(d => d.data && d.data.id);
+    nodes.forEach(d => {
+      // Hijos
+      if (d.data.children && d.data.children.length) {
+        d.data.children.forEach(child => {
+          const childNode = idMap.get(child.id);
+          // Solo conectar si ambos son personas reales
+          if (childNode && childNode.data && childNode.data.id) {
+            relations.push({ source: d, target: childNode, type: 'child' });
+          }
+        });
+      }
+      // Padres
+      if (d.data._parents && d.data._parents.length) {
+        d.data._parents.forEach(parent => {
+          const parentNode = idMap.get(parent.id);
+          if (parentNode && parentNode.data && parentNode.data.id) {
+            relations.push({ source: d, target: parentNode, type: 'parent' });
+          }
+        });
+      }
+      // Cónyuges
+      if (d.data.spouses && d.data.spouses.length) {
+        d.data.spouses.forEach(spouse => {
+          const spouseNode = idMap.get(spouse.id);
+          if (spouseNode && spouseNode.data && spouseNode.data.id) {
+            relations.push({ source: d, target: spouseNode, type: 'spouse' });
+          }
+        });
+      }
+    });
+    return relations;
+  }
+
+  // NUEVO: Recorrer todos los nodos únicos, no solo root.descendants()
+  function getAllRelationsFromAllNodes(root) {
+    // Construir un mapa de todos los nodos únicos por id
+    const idMap = createNodeMap(root);
+    const allNodes = Array.from(idMap.values());
+    const relations = [];
+    allNodes.forEach(d => {
+      // Hijos
+      if (d.data.children && d.data.children.length) {
+        d.data.children.forEach(child => {
+          const childNode = idMap.get(child.id);
+          if (childNode && childNode.data && childNode.data.id) {
+            relations.push({ source: d, target: childNode, type: 'child' });
+          }
+        });
+      }
+      // Padres
+      if (d.data._parents && d.data._parents.length) {
+        d.data._parents.forEach(parent => {
+          const parentNode = idMap.get(parent.id);
+          if (parentNode && parentNode.data && parentNode.data.id) {
+            relations.push({ source: d, target: parentNode, type: 'parent' });
+          }
+        });
+      }
+      // Cónyuges
+      if (d.data.spouses && d.data.spouses.length) {
+        d.data.spouses.forEach(spouse => {
+          const spouseNode = idMap.get(spouse.id);
+          if (spouseNode && spouseNode.data && spouseNode.data.id) {
+            // Solo una dirección para evitar duplicados
+            if (d.data.id < spouseNode.data.id) {
+              relations.push({ source: d, target: spouseNode, type: 'spouse' });
+            }
+          }
+        });
+      }
+    });
+    return relations;
+  }
+
   // Aplicar layout de cluster para disposición radial
   const cluster = d3.cluster()
     .size([2 * Math.PI, radius - 100]); // Usar el radio dinámico
 
+  // --- NUEVO: Verificar si root es null antes de continuar ---
+  if (!root) {
+    console.error('Error: root es null después de la construcción de la jerarquía. Abortando renderizado.');
+    return;
+  }
+
+  // Importante: Aplicar el layout de cluster para calcular posiciones
   const linkedRoot = bilink(cluster(root.sort((a, b) => 
     d3.ascending(a.height, b.height) || d3.ascending(a.data.name, b.data.name)
   )));
+
+  // NUEVO: Guardar un mapa de posiciones para los nodos reales
+  const nodePositions = new Map();
+  
+  // Recorrer los nodos del árbol y guardar sus posiciones
+  linkedRoot.descendants().forEach(node => {
+    if (node.data && node.data.id) {
+      nodePositions.set(node.data.id, {
+        x: node.x,
+        y: node.y
+      });
+    }
+  });
   
   // Crear SVG y grupo principal centrado con preserveAspectRatio
   const svg = d3.select(container)
@@ -362,108 +521,235 @@ export function renderAgrupamientoRelacional(rootData, container, width, height,
     return isDirectFamily;
   }
   
-  // Eliminar duplicados de conexiones
+  // Filtrar conexiones - versión ULTRA permisiva
   function getUniqueConnections(connections) {
-    const uniqueConnections = [];
-    const seenConnections = new Set();
-    
-    connections.forEach(conn => {
-      if (!conn.source || !conn.target) return;
-      
-      // Crear una clave única para la conexión
-      const sourceId = conn.source.data.id;
-      const targetId = conn.target.data.id;
-      const key = `${Math.min(sourceId, targetId)}-${Math.max(sourceId, targetId)}-${conn.type}`;
+    console.log("Analizando conexiones para filtrar duplicados");
+    console.log(`Conexiones totales antes de filtrar: ${connections.length}`);
 
-      if (!seenConnections.has(key)) {
-        seenConnections.add(key);
-        uniqueConnections.push(conn);
-      }
+    // Simplemente mantener todas las conexiones directas entre nodos
+    // Más adelante sólo filtraremos casos obvios como NULL o self-links
+    const validConnections = connections.filter(conn => {
+      // Validar que source y target existan y no sean el mismo nodo
+      if (!conn.source || !conn.target) return false;
+      if (!conn.source.data || !conn.target.data) return false;
+      if (!conn.source.data.id || !conn.target.data.id) return false;
+      
+      // No permitir conexiones de un nodo a sí mismo
+      if (conn.source.data.id === conn.target.data.id) return false;
+      
+      // Si pasa todas las validaciones, es una conexión válida
+      return true;
     });
     
-    return uniqueConnections;
+    console.log(`Conexiones válidas después de filtrar casos inválidos: ${validConnections.length}`);
+    
+    // Opcional: visualizar algunos ejemplos de conexiones para debug
+    if (validConnections.length > 0) {
+      const samples = validConnections.slice(0, Math.min(5, validConnections.length));
+      samples.forEach((conn, i) => {
+        console.log(`Ejemplo conexión ${i+1}: ${conn.source.data.id} → ${conn.target.data.id} (${conn.type})`);
+      });
+    }
+    
+    return validConnections;
   }
   
-  // Obtener las conexiones
-  const connections = linkedRoot.connections || [];
+  // Obtener las conexiones - COMPLETAMENTE REDISEÑADO
+  let connections = [];
   
-  // Si no hay conexiones explícitas, crear las básicas basadas en la estructura
-  if (connections.length === 0 && !isFamilySelection) {
-    linkedRoot.leaves().forEach(source => {
-      linkedRoot.leaves().forEach(target => {
-        if (shouldConnect(source, target)) {
-          // Determinar tipo de relación
-          let relationType = 'other';
-          if (source.data.children && source.data.children.some(c => c.id === target.data.id)) {
-            relationType = 'child';
-          } else if (source.data._parents && source.data._parents.some(p => p.id === target.data.id)) {
-            relationType = 'parent';
-          } else if (source.data.spouses && source.data.spouses.some(s => s.id === target.data.id)) {
-            relationType = 'spouse';
-          }
+  console.log("Procesando conexiones directamente de los datos originales");
+  
+  // IMPORTANTE: Usando directamente rootData.nodes si es un array
+  const allNodes = rootData.nodes && Array.isArray(rootData.nodes) 
+    ? rootData.nodes 
+    : (rootData.descendants ? rootData.descendants().map(d => d.data) : []);
+  
+  console.log(`Total de nodos encontrados: ${allNodes.length}`);
+  
+  // Crear un mapa simple de nodos por ID
+  const nodeMap = new Map();
+  const nodeObjectMap = new Map();
+  
+  // Primero mapear todos los nodos
+  allNodes.forEach(node => {
+    if (node && node.id) {
+      // Crear un pseudo-nodo jerárquico si no existe
+      // Este es esencialmente un nodo que D3 puede usar para el layout
+      const hierarchyNode = {
+        data: node,
+        x: Math.random() * Math.PI * 2,  // Posición aleatoria 
+        y: radius * 0.9,
+        depth: 0,
+        height: 0,
+        incoming: [],
+        outgoing: [],
+        connections: []
+      };
+      
+      nodeMap.set(node.id, hierarchyNode);
+      nodeObjectMap.set(node.id, node);
+    }
+  });
+  
+  // Ahora procesar todas las relaciones posibles
+  allNodes.forEach(node => {
+    if (!node || !node.id) return;
+    
+    const sourceNode = nodeMap.get(node.id);
+    if (!sourceNode) return;
+    
+    // Procesar hijos - explícito
+    if (node.children && Array.isArray(node.children)) {
+      node.children.forEach(child => {
+        if (!child || !child.id) return;
+        
+        const targetNode = nodeMap.get(child.id);
+        if (!targetNode) return;
+        
+        connections.push({
+          source: sourceNode,
+          target: targetNode,
+          type: 'child'
+        });
+      });
+    }
+    
+    // Procesar padres - explícito
+    if (node._parents && Array.isArray(node._parents)) {
+      node._parents.forEach(parent => {
+        if (!parent || !parent.id) return;
+        
+        const targetNode = nodeMap.get(parent.id);
+        if (!targetNode) return;
+        
+        connections.push({
+          source: sourceNode,
+          target: targetNode,
+          type: 'parent'
+        });
+      });
+    }
+    
+    // Procesar cónyuges - explícito
+    if (node.spouses && Array.isArray(node.spouses)) {
+      node.spouses.forEach(spouse => {
+        if (!spouse || !spouse.id) return;
+        
+        // Solo agregar en una dirección para evitar duplicados
+        if (node.id < spouse.id) {
+          const targetNode = nodeMap.get(spouse.id);
+          if (!targetNode) return;
           
           connections.push({
-            source,
-            target,
-            type: relationType
+            source: sourceNode,
+            target: targetNode,
+            type: 'spouse'
           });
         }
       });
-    });
-  }
+    }
+  });
   
-  // Filtrar conexiones duplicadas
+  console.log(`Conexiones antes de filtrar: ${connections.length}`);
+  
+  // Filtrar conexiones duplicadas con el método existente
   const uniqueConnections = getUniqueConnections(connections);
   
-  // Dibujar enlaces
+  // Actualizamos las listas incoming/outgoing para cada nodo
+  uniqueConnections.forEach(conn => {
+    if (!conn.source || !conn.target) return;
+    
+    // Para referencias cruzadas durante la interactividad
+    conn.source.connections = conn.source.connections || [];
+    conn.target.connections = conn.target.connections || [];
+    
+    conn.source.connections.push(conn);
+    conn.target.connections.push(conn);
+    
+    // Para el layout (opcional)
+    conn.source.outgoing = conn.source.outgoing || [];
+    conn.target.incoming = conn.target.incoming || [];
+    
+    const type = conn.type;
+    conn.source.outgoing.push([conn.source, conn.target, type]);
+    conn.target.incoming.push([conn.source, conn.target, type]);
+    
+    // Si es esposo/a, crear referencia bidireccional
+    if (type === 'spouse') {
+      conn.source.incoming = conn.source.incoming || [];
+      conn.target.outgoing = conn.target.outgoing || [];
+      
+      conn.source.incoming.push([conn.target, conn.source, type]);
+      conn.target.outgoing.push([conn.target, conn.source, type]);
+    }
+  });
+  
+  // Log para depuración
+  console.log(`Total de conexiones únicas procesadas: ${uniqueConnections.length}`);
+  
+  // Debugging
+  console.log(`Total de conexiones únicas: ${uniqueConnections.length}`);
+  
+  // SECCIÓN MEJORADA: Colorear las líneas según el tipo de conexión
+  const parentColor = "#ff7700";  // Naranja para padres
+  const childColor = "#00aa00";   // Verde para hijos
+  const spouseColor = "#7777ff";  // Azul para cónyuges
+  const defaultColor = "#ccc";    // Gris para líneas sin tipo
+
+  // Función mejorada para determinar el color según el tipo de conexión
+  function getConnectionColor(type) {
+    switch(type) {
+      case 'parent': return parentColor;
+      case 'child': return childColor;
+      case 'spouse': return spouseColor;
+      default: return defaultColor;
+    }
+  }
+
+  // Dibujar enlaces - completamente revisado para usar colores correctos
   const link = g.append("g")
     .attr("fill", "none")
     .selectAll("path")
     .data(uniqueConnections)
     .join("path")
-    .attr("class", d => `link ${d.type}`)
-    .attr("stroke", colornone)
-    .attr("stroke-width", 1)
-    .attr("stroke-opacity", 0.5)
+    .attr("class", d => `link ${d.type || 'undefined'}`)
+    .attr("stroke", d => getConnectionColor(d.type))
+    .attr("stroke-width", 1.5)  // Líneas más gruesas para mejor visualización
+    .attr("stroke-opacity", 0.7)  // Mayor opacidad para mejor visibilidad
     .style("mix-blend-mode", "multiply")
     .attr("d", d => {
+      // Si falta source o target, no dibujar nada
       if (!d.source || !d.target) return null;
       
-      // Crear puntos para la curva usando la jerarquía de D3
-      // Usar el método path para obtener los ancestros comunes
-      const path = d.source.path(d.target);
-      if (!path || path.length === 0) {
-        // Fallback si path falla (puede pasar con nodos no directamente conectados en la jerarquía cluster)
-        // Intentar construir un camino simple
-        const points = [];
-        let node = d.source;
-        while (node) {
-          points.push([node.x, node.y]);
-          node = node.parent;
-          if (node === d.target.parent) break; // Stop near common ancestor
-        }
-        
-        let node2 = d.target;
-        const points2 = [];
-        while (node2 && node2 !== node) {
-          points2.push([node2.x, node2.y]);
-          node2 = node2.parent;
-        }
-        
-        const simplePath = [...points, ...points2.reverse()];
-        if (simplePath.length < 2) return null; // Necesita al menos 2 puntos
-        return line(simplePath.map(p => ({ x: p[0], y: p[1] })));
+      // Si no hay datos en source o target, no dibujar nada
+      if (!d.source.data || !d.target.data) return null;
+      
+      // Obtener los IDs de los nodos conectados
+      const sourceId = d.source.data.id;
+      const targetId = d.target.data.id;
+
+      // NO usar nodos artificiales o virtuales
+      if (sourceId === '__virtual_root__' || targetId === '__virtual_root__') {
+        return null; // No dibujamos conexiones a/desde el nodo raíz virtual
       }
       
-      // Usar el path de D3 si está disponible
-      return line(path.map(n => ({ x: n.x, y: n.y })));
-    })
-    .each(function(d) { 
-      d.path = this; 
+      // Buscar los nodos reales en el árbol para obtener posiciones correctas
+      const sourceNode = linkedRoot.descendants().find(node => node.data && node.data.id === sourceId);
+      const targetNode = linkedRoot.descendants().find(node => node.data && node.data.id === targetId);
       
-      // Almacenar referencia a la conexión en ambos nodos
-      d.source.connections.push(d);
-      d.target.connections.push(d);
+      // Si no encontramos las posiciones, no dibujar nada
+      if (!sourceNode || !targetNode) return null;
+      
+      // Crear una curva suave entre los nodos usando sus posiciones reales
+      return line([
+        { x: sourceNode.x, y: sourceNode.y }, // Punto inicial
+        { x: (sourceNode.x + targetNode.x) / 2, y: (sourceNode.y + targetNode.y) / 2 * 0.9 }, // Punto medio (curva)
+        { x: targetNode.x, y: targetNode.y }  // Punto final
+      ]);
+    })
+    .each(function(d) {
+      // Guardar referencia al elemento SVG para interactividad
+      d.path = this;
     });
   
   // Dibujar nodos (textos)
