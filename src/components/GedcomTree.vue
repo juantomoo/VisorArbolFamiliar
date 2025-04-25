@@ -106,92 +106,92 @@
     </v-main>
 
     <v-dialog v-model="showModal" max-width="600px" scrollable :attach="treeContainerCard?.$el || undefined"> 
-       <v-card v-if="selectedNode">
-         <v-card-title class="d-flex justify-space-between align-center">
-           <span class="text-h5">Detalles del Individuo</span>
-           <v-btn icon="mdi-close" variant="text" @click="showModal = false"></v-btn>
-         </v-card-title>
-         <v-divider></v-divider>
-         <v-card-text style="max-height: 70vh;">
-           <v-list density="compact"> 
-             <v-list-item v-if="selectedNode.name">
-               <v-list-item-title><strong>Nombre:</strong> {{ selectedNode.name }}</v-list-item-title>
-             </v-list-item>
-             <v-list-item v-if="selectedNode.id">
-               <v-list-item-title><strong>ID:</strong> {{ selectedNode.id }}</v-list-item-title>
-             </v-list-item>
+       <v-card v-if="selectedNode" class="modal-diag"  style="background-color: var(--v-theme-surface); color: var(--v-theme-on-surface);">
+       <v-card-title class="d-flex justify-space-between align-center">
+         <span class="text-h5">Detalles del Individuo</span>
+         <v-btn icon="mdi-close" variant="text" @click="showModal = false"></v-btn>
+       </v-card-title>
+       <v-divider></v-divider>
+       <v-card-text style="max-height: 70vh;">
+         <v-list density="compact"> 
+         <v-list-item v-if="selectedNode.name">
+           <v-list-item-title><strong>Nombre:</strong> {{ selectedNode.name }}</v-list-item-title>
+         </v-list-item>
+         <v-list-item v-if="selectedNode.id">
+           <v-list-item-title><strong>ID:</strong> {{ selectedNode.id }}</v-list-item-title>
+         </v-list-item>
 
-             <template v-if="selectedNode.raw && selectedNode.raw.children">
-               <template v-for="(child, idx) in selectedNode.raw.children" :key="'raw-'+idx">
-                 <v-list-item v-if="child.type === 'BIRT' || child.type === 'DEAT'">
-                   <v-list-item-title>
-                     <strong>{{ child.type === 'BIRT' ? 'Nacimiento' : 'Fallecimiento' }}:</strong>
-                     <template v-for="(sub, sidx) in child.children" :key="'raw-sub-'+sidx">
-                       <span v-if="sub.type === 'DATE'"> {{ sub.value || 'Fecha desconocida' }}</span>
-                       <span v-if="sub.type === 'PLAC'"> ({{ sub.value || 'Lugar desconocido' }})</span>
-                     </template>
-                     <span v-if="!child.children || child.children.length === 0"> Información no disponible</span>
-                   </v-list-item-title>
-                 </v-list-item>
-               </template>
+         <template v-if="selectedNode.raw && selectedNode.raw.children">
+           <template v-for="(child, idx) in selectedNode.raw.children" :key="'raw-'+idx">
+           <v-list-item v-if="child.type === 'BIRT' || child.type === 'DEAT'">
+             <v-list-item-title>
+             <strong>{{ child.type === 'BIRT' ? 'Nacimiento' : 'Fallecimiento' }}:</strong>
+             <template v-for="(sub, sidx) in child.children" :key="'raw-sub-'+sidx">
+               <span v-if="sub.type === 'DATE'"> {{ sub.value || 'Fecha desconocida' }}</span>
+               <span v-if="sub.type === 'PLAC'"> ({{ sub.value || 'Lugar desconocido' }})</span>
              </template>
+             <span v-if="!child.children || child.children.length === 0"> Información no disponible</span>
+             </v-list-item-title>
+           </v-list-item>
+           </template>
+         </template>
 
-             <v-list-item v-if="selectedNode._parents && selectedNode._parents.length">
-                <v-list-item-title><strong>Padres:</strong></v-list-item-title>
-                <v-list class="ml-4" density="compact">
-                  <v-list-item v-for="parent in selectedNode._parents" :key="parent.id">
-                    <v-list-item-title>{{ parent.name || 'Desconocido' }}</v-list-item-title>
-                  </v-list-item>
-                </v-list>
-              </v-list-item>
+         <v-list-item v-if="selectedNode._parents && selectedNode._parents.length">
+          <v-list-item-title><strong>Padres:</strong></v-list-item-title>
+          <v-list class="ml-4" density="compact">
+            <v-list-item v-for="parent in selectedNode._parents" :key="parent.id">
+            <v-list-item-title>{{ parent.name || 'Desconocido' }}</v-list-item-title>
+            </v-list-item>
+          </v-list>
+          </v-list-item>
 
-             <v-list-item v-if="selectedNode.children && selectedNode.children.length">
-               <v-list-item-title><strong>Hijos:</strong></v-list-item-title>
-               <v-list class="ml-4" density="compact">
-                 <v-list-item v-for="child in selectedNode.children" :key="child.id">
-                   <v-list-item-title>{{ child.name || 'Desconocido' }}</v-list-item-title>
-                 </v-list-item>
-               </v-list>
-             </v-list-item>
-
-             <v-list-item v-if="hermanos && hermanos.length">
-               <v-list-item-title><strong>Hermanos:</strong></v-list-item-title>
-               <v-list class="ml-4" density="compact">
-                 <v-list-item v-for="hermano in hermanos" :key="hermano.id">
-                   <v-list-item-title>{{ hermano.name || 'Desconocido' }}</v-list-item-title>
-                 </v-list-item>
-               </v-list>
-             </v-list-item>
-
-             <v-list-item v-if="conyuges && conyuges.length">
-               <v-list-item-title><strong>Cónyuges:</strong></v-list-item-title>
-               <v-list class="ml-4" density="compact">
-                 <v-list-item v-for="conyuge in conyuges" :key="conyuge.id">
-                   <v-list-item-title>{{ conyuge.name || 'Desconocido' }}</v-list-item-title>
-                   <v-list-item-subtitle v-if="conyuge.relationshipEvents && conyuge.relationshipEvents.length > 0">
-                       <div v-for="event in conyuge.relationshipEvents" :key="event.type + (event.date || '')" class="ml-2">
-                          <strong>{{ event.type }}:</strong>
-                          <span v-if="event.date"> {{ event.date }}</span>
-                          <span v-if="event.place"> ({{ event.place }})</span>
-                          <span v-if="!event.date && !event.place"> Información no disponible</span>
-                       </div>
-                   </v-list-item-subtitle>
-                   <v-list-item-subtitle v-else class="ml-2">
-                       (No hay eventos de relación registrados)
-                   </v-list-item-subtitle>
-                 </v-list-item>
-               </v-list>
-             </v-list-item>
+         <v-list-item v-if="selectedNode.children && selectedNode.children.length">
+           <v-list-item-title><strong>Hijos:</strong></v-list-item-title>
+           <v-list class="ml-4" density="compact">
+           <v-list-item v-for="child in selectedNode.children" :key="child.id">
+             <v-list-item-title>{{ child.name || 'Desconocido' }}</v-list-item-title>
+           </v-list-item>
            </v-list>
-         </v-card-text>
-         <v-divider></v-divider>
-          <v-card-actions>
-            <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" variant="text" @click="showModal = false">Cerrar</v-btn> 
-          </v-card-actions>
+         </v-list-item>
+
+         <v-list-item v-if="hermanos && hermanos.length">
+           <v-list-item-title><strong>Hermanos:</strong></v-list-item-title>
+           <v-list class="ml-4" density="compact">
+           <v-list-item v-for="hermano in hermanos" :key="hermano.id">
+             <v-list-item-title>{{ hermano.name || 'Desconocido' }}</v-list-item-title>
+           </v-list-item>
+           </v-list>
+         </v-list-item>
+
+         <v-list-item v-if="conyuges && conyuges.length">
+           <v-list-item-title><strong>Cónyuges:</strong></v-list-item-title>
+           <v-list class="ml-4" density="compact">
+           <v-list-item v-for="conyuge in conyuges" :key="conyuge.id">
+             <v-list-item-title>{{ conyuge.name || 'Desconocido' }}</v-list-item-title>
+             <v-list-item-subtitle v-if="conyuge.relationshipEvents && conyuge.relationshipEvents.length > 0">
+               <div v-for="event in conyuge.relationshipEvents" :key="event.type + (event.date || '')" class="ml-2">
+                <strong>{{ event.type }}:</strong>
+                <span v-if="event.date"> {{ event.date }}</span>
+                <span v-if="event.place"> ({{ event.place }})</span>
+                <span v-if="!event.date && !event.place"> Información no disponible</span>
+               </div>
+             </v-list-item-subtitle>
+             <v-list-item-subtitle v-else class="ml-2">
+               (No hay eventos de relación registrados)
+             </v-list-item-subtitle>
+           </v-list-item>
+           </v-list>
+         </v-list-item>
+         </v-list>
+       </v-card-text>
+       <v-divider></v-divider>
+        <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn color="blue darken-1" variant="text" @click="showModal = false">Cerrar</v-btn> 
+        </v-card-actions>
        </v-card>
-       <v-card v-else>
-            <v-card-text>No hay datos de nodo para mostrar.</v-card-text>
+       <v-card v-else style="background-color: var(--v-theme-surface); color: var(--v-theme-on-surface);">
+        <v-card-text>No hay datos de nodo para mostrar.</v-card-text>
        </v-card>
      </v-dialog>
 
