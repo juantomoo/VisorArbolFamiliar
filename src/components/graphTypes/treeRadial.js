@@ -161,40 +161,34 @@ export function renderTreeRadial(rootData, container, width, height, onNodeClick
   };
   
   // Etiquetas de texto adaptativas
-  node.append("text")
-    .attr("class", "node-label")
-    .attr("dy", "0.31em")
-    .attr("x", d => d.x < Math.PI ? 8 : -8)
-    .attr("text-anchor", d => d.x < Math.PI ? "start" : "end")
-    .attr("fill", "var(--v-theme-on-surface)")
-    .attr("font-size", d => {
-      // Ajustar tamaño de fuente basado en profundidad
+  node.append('text')
+    .attr('class', 'node-label')
+    .attr('dy', '0.31em')
+    .attr('x', d => d.x < Math.PI ? 8 : -8)
+    .attr('text-anchor', d => d.x < Math.PI ? 'start' : 'end')
+    .attr('fill', 'var(--v-theme-on-surface)')
+    .attr('font-size', d => {
       const depthFactor = Math.max(0.7, 1 - d.depth * 0.1);
       return `${baseFontSize * depthFactor}px`;
     })
-    .attr("opacity", d => shouldShowText(d) ? 1 : 0) // Ocultar etiquetas en nodos muy densos
+    .attr('opacity', d => shouldShowText(d) ? 1 : 0)
     .text(d => d.data.name)
     .each(function(d) {
       const self = d3.select(this);
       let text = d.data.name;
-      
       try {
-        // Truncar texto si es necesario
         const maxLength = d.depth === 0 ? 30 : (20 - d.depth * 3);
         if (text.length > maxLength) {
-          text = text.slice(0, maxLength - 3) + "...";
+          text = text.slice(0, maxLength - 3) + '...';
           self.text(text);
         }
-        
-        // Añadir tooltip si está truncado
         if (text !== d.data.name) {
-          self.append("title").text(d.data.name);
+          self.append('title').text(d.data.name);
         }
       } catch (e) {
-        // Si hay errores al calcular el texto, usar un valor seguro
         if (text.length > 10) {
-          self.text(text.slice(0, 7) + "...");
-          self.append("title").text(d.data.name);
+          self.text(text.slice(0, 7) + '...');
+          self.append('title').text(d.data.name);
         }
       }
     });

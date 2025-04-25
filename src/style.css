@@ -5,8 +5,9 @@
   font-weight: 400;
 
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* Elimina color y background-color fijos, deja que Vuetify y el tema controlen */
+  /* color: rgba(255, 255, 255, 0.87); */
+  /* background-color: #242424; */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -25,10 +26,10 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  /* Quita display flex y place-items center para que el layout de Vuetify funcione bien */
   min-width: 320px;
   min-height: 100vh;
+  /* No forzar color ni fondo aquí */
 }
 
 h1 {
@@ -64,12 +65,12 @@ button:focus-visible {
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+  /* No forzar color ni fondo aquí */
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    /* No forzar color ni background aquí, deja que Vuetify y el tema lo manejen */
   }
   a:hover {
     color: #747bff;

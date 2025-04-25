@@ -1,7 +1,7 @@
 <template>
   <v-app :theme="darkMode ? 'dark' : 'light'">
     <v-app-bar app>
-      <v-app-bar-title>Árbol Genealógico Material</v-app-bar-title>
+      <v-app-bar-title>Árbol Genealógico por HISQUE Estudio</v-app-bar-title>
       <v-spacer></v-spacer>
       <v-btn :icon="darkMode ? 'mdi-weather-night' : 'mdi-weather-sunny'" @click="toggleDarkMode"></v-btn>
     </v-app-bar>

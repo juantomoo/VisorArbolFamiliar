@@ -19,6 +19,7 @@ export function renderHourglassGraph(centerNode, container, width, height, onNod
   g.append('text')
     .attr('y', 30)
     .attr('text-anchor', 'middle')
+    .attr('fill', 'var(--v-theme-on-surface)')
     .text(centerNode.name);
   // Aquí deberías dibujar los ancestros hacia arriba y descendientes hacia abajo
   // usando layouts de árbol vertical invertido y normal, conectando al nodo central

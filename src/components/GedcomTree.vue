@@ -1,30 +1,44 @@
 <template>
   <v-container fluid class="pa-0 ma-0 fill-height">
-    <!-- Header is handled by App.vue -->
     <v-main>
       <v-container>
         <v-row justify="center">
           <v-col cols="12" md="10" lg="12">
             <v-card class="mb-4 pa-4">
-              <v-file-input
-                label="Seleccionar archivo GEDCOM (.ged, .gedcom)"
-                accept=".ged,.gedcom"
-                @change="onFileChange"
-                variant="outlined"
-                dense
-                hide-details
-              ></v-file-input>
+              <div class="d-flex align-center flex-wrap gap-2">
+                <v-file-input
+                  label="Seleccionar archivo GEDCOM (.ged, .gedcom)"
+                  accept=".ged,.gedcom"
+                  @change="onFileChange"
+                  variant="outlined"
+                  density="compact"  
+                  hide-details
+                  style="max-width: 320px;"
+                ></v-file-input>
+                <v-text-field
+                  v-model="gedcomFileName"
+                  label="Nombre de archivo (sin extensión)"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  style="max-width: 260px;"
+                  @keyup.enter="onLoadGedcomByName"
+                ></v-text-field>
+                <v-btn color="primary" @click="onLoadGedcomByName" :disabled="!gedcomFileName">
+                  Cargar por nombre
+                </v-btn>
+              </div>
               <v-alert v-if="error" type="error" dense class="mt-3">{{ error }}</v-alert>
             </v-card>
 
             <v-card class="mb-4 pa-3">
                <div class="d-flex flex-wrap justify-space-between align-center">
-                 <!-- Graph Type Selection -->
                  <v-item-group v-model="graphType" mandatory class="d-flex flex-wrap justify-center flex-grow-1">
                    <v-item v-for="type in graphTypes" :key="type.value" :value="type.value" v-slot="{ isSelected, toggle }">
                      <v-btn
                        :color="isSelected ? 'primary' : 'grey'"
                        class="ma-1"
+                       size="small" 
                        @click="toggle"
                      >
                        {{ type.text }}
@@ -32,19 +46,18 @@
                    </v-item>
                  </v-item-group>
 
-                 <!-- Back Button -->
                  <v-btn
                    v-if="viewHistory.length > 0 && graphType === 'radial'"
                    @click="goBack"
                    color="secondary"
                    class="ml-2"
+                   size="small" 
                    prepend-icon="mdi-arrow-left"
                  >
                    Atrás
                  </v-btn>
                </div>
 
-               <!-- Selector de familias para Agrupamiento Relacional -->
                <v-expand-transition>
                  <div v-if="graphType === 'radial' && familyGroups.length > 0" class="mt-3">
                    <v-divider class="mb-3"></v-divider>
@@ -57,6 +70,7 @@
                      variant="outlined"
                      density="comfortable"
                      clearable
+                     hide-details
                      @update:model-value="onFamilySelected"
                    >
                      <template v-slot:prepend-item>
@@ -73,15 +87,25 @@
             </v-card>
 
             <v-card ref="treeContainerCard" class="overflow-hidden" style="height: 70vh;">
-              <div ref="treeContainer" class="w-100 h-100"></div>
+              <div class="d-flex justify-end align-center pr-2 pt-2" style="position: absolute; z-index: 2; right: 0;">
+                <v-btn icon size="small" @click="zoomIn" :disabled="!gedcomData">
+                  <v-icon>mdi-magnify-plus-outline</v-icon>
+                </v-btn>
+                <v-btn icon size="small" @click="zoomOut" :disabled="!gedcomData">
+                  <v-icon>mdi-magnify-minus-outline</v-icon>
+                </v-btn>
+                <v-btn icon size="small" @click="toggleFullscreen">
+                  <v-icon>mdi-fullscreen</v-icon>
+                </v-btn>
+              </div>
+              <div ref="treeContainer" id="treeContainer" class="w-100 h-100"></div>
             </v-card>
           </v-col>
         </v-row>
       </v-container>
     </v-main>
 
-    <!-- Modal -->
-    <v-dialog v-model="showModal" max-width="500px" scrollable>
+    <v-dialog v-model="showModal" max-width="600px" scrollable :attach="treeContainerCard?.$el || undefined"> 
        <v-card v-if="selectedNode">
          <v-card-title class="d-flex justify-space-between align-center">
            <span class="text-h5">Detalles del Individuo</span>
@@ -89,7 +113,7 @@
          </v-card-title>
          <v-divider></v-divider>
          <v-card-text style="max-height: 70vh;">
-           <v-list dense>
+           <v-list density="compact"> 
              <v-list-item v-if="selectedNode.name">
                <v-list-item-title><strong>Nombre:</strong> {{ selectedNode.name }}</v-list-item-title>
              </v-list-item>
@@ -97,58 +121,63 @@
                <v-list-item-title><strong>ID:</strong> {{ selectedNode.id }}</v-list-item-title>
              </v-list-item>
 
-             <!-- Birth/Death Info -->
              <template v-if="selectedNode.raw && selectedNode.raw.children">
                <template v-for="(child, idx) in selectedNode.raw.children" :key="'raw-'+idx">
                  <v-list-item v-if="child.type === 'BIRT' || child.type === 'DEAT'">
                    <v-list-item-title>
                      <strong>{{ child.type === 'BIRT' ? 'Nacimiento' : 'Fallecimiento' }}:</strong>
                      <template v-for="(sub, sidx) in child.children" :key="'raw-sub-'+sidx">
-                       <span v-if="sub.type === 'DATE'"> {{ sub.value }}</span>
-                       <span v-if="sub.type === 'PLAC'"> ({{ sub.value }})</span>
+                       <span v-if="sub.type === 'DATE'"> {{ sub.value || 'Fecha desconocida' }}</span>
+                       <span v-if="sub.type === 'PLAC'"> ({{ sub.value || 'Lugar desconocido' }})</span>
                      </template>
+                     <span v-if="!child.children || child.children.length === 0"> Información no disponible</span>
                    </v-list-item-title>
                  </v-list-item>
                </template>
              </template>
 
-             <!-- Relationships -->
-              <v-list-item v-if="selectedNode._parents && selectedNode._parents.length">
+             <v-list-item v-if="selectedNode._parents && selectedNode._parents.length">
                 <v-list-item-title><strong>Padres:</strong></v-list-item-title>
-                <v-list class="ml-4" dense>
+                <v-list class="ml-4" density="compact">
                   <v-list-item v-for="parent in selectedNode._parents" :key="parent.id">
-                    <v-list-item-title>{{ parent.name }}</v-list-item-title>
+                    <v-list-item-title>{{ parent.name || 'Desconocido' }}</v-list-item-title>
                   </v-list-item>
                 </v-list>
               </v-list-item>
 
              <v-list-item v-if="selectedNode.children && selectedNode.children.length">
                <v-list-item-title><strong>Hijos:</strong></v-list-item-title>
-               <v-list class="ml-4" dense>
+               <v-list class="ml-4" density="compact">
                  <v-list-item v-for="child in selectedNode.children" :key="child.id">
-                   <v-list-item-title>{{ child.name }}</v-list-item-title>
+                   <v-list-item-title>{{ child.name || 'Desconocido' }}</v-list-item-title>
                  </v-list-item>
                </v-list>
              </v-list-item>
 
              <v-list-item v-if="hermanos && hermanos.length">
                <v-list-item-title><strong>Hermanos:</strong></v-list-item-title>
-               <v-list class="ml-4" dense>
+               <v-list class="ml-4" density="compact">
                  <v-list-item v-for="hermano in hermanos" :key="hermano.id">
-                   <v-list-item-title>{{ hermano.name }}</v-list-item-title>
+                   <v-list-item-title>{{ hermano.name || 'Desconocido' }}</v-list-item-title>
                  </v-list-item>
                </v-list>
              </v-list-item>
 
              <v-list-item v-if="conyuges && conyuges.length">
                <v-list-item-title><strong>Cónyuges:</strong></v-list-item-title>
-               <v-list class="ml-4" dense>
+               <v-list class="ml-4" density="compact">
                  <v-list-item v-for="conyuge in conyuges" :key="conyuge.id">
-                   <v-list-item-title>{{ conyuge.name }}</v-list-item-title>
-                   <v-list-item-subtitle v-for="event in conyuge.relationshipEvents" :key="event.type">
-                     <strong>{{ event.type }}:</strong>
-                     <span v-if="event.date"> {{ event.date }}</span>
-                     <span v-if="event.place"> ({{ event.place }})</span>
+                   <v-list-item-title>{{ conyuge.name || 'Desconocido' }}</v-list-item-title>
+                   <v-list-item-subtitle v-if="conyuge.relationshipEvents && conyuge.relationshipEvents.length > 0">
+                       <div v-for="event in conyuge.relationshipEvents" :key="event.type + (event.date || '')" class="ml-2">
+                          <strong>{{ event.type }}:</strong>
+                          <span v-if="event.date"> {{ event.date }}</span>
+                          <span v-if="event.place"> ({{ event.place }})</span>
+                          <span v-if="!event.date && !event.place"> Información no disponible</span>
+                       </div>
+                   </v-list-item-subtitle>
+                   <v-list-item-subtitle v-else class="ml-2">
+                       (No hay eventos de relación registrados)
                    </v-list-item-subtitle>
                  </v-list-item>
                </v-list>
@@ -158,8 +187,11 @@
          <v-divider></v-divider>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="showModal = false">Cerrar</v-btn>
+            <v-btn color="blue darken-1" variant="text" @click="showModal = false">Cerrar</v-btn> 
           </v-card-actions>
+       </v-card>
+       <v-card v-else>
+            <v-card-text>No hay datos de nodo para mostrar.</v-card-text>
        </v-card>
      </v-dialog>
 
@@ -169,6 +201,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick, onBeforeUnmount, shallowRef } from 'vue';
 import * as parseGedcom from 'parse-gedcom';
+// Importa las funciones de renderizado de los diferentes tipos de gráficos
+// Asegúrate de que las rutas sean correctas según tu estructura de proyecto
 import { renderForceGraph } from './graphTypes/forceGraph';
 import { renderTreeHorizontal } from './graphTypes/treeHorizontal';
 import { renderHourglassGraph } from './graphTypes/hourglassGraph';
@@ -179,47 +213,111 @@ import { useTheme } from 'vuetify'
 
 const theme = useTheme();
 
-const gedcomData = ref(null);
-const error = ref(null);
-const selectedNode = ref(null);
-const showModal = ref(false);
-const forceGraphData = ref(null); // Renamed to avoid confusion with D3 simulation object
-const simulation = ref(null);
-const treeRootData = ref(null); // Renamed for clarity
-const graphType = ref('force');
-const treeContainer = ref(null);
-const treeContainerCard = ref(null);
-const currentWidth = ref(0);
-const currentHeight = ref(0);
-const resizeObserver = ref(null);
-const familyGroups = ref([]);
-const selectedFamily = ref(null);
+// --- State ---
+const gedcomData = ref(null); // Datos GEDCOM parseados
+const error = ref(null); // Mensaje de error
+const selectedNode = ref(null); // Nodo seleccionado para el modal
+const showModal = ref(false); // Visibilidad del modal
+const forceGraphData = ref(null); // Datos para grafo de fuerza {nodes, links}
+const simulation = ref(null); // Simulación D3 para grafo de fuerza
+const treeRootData = ref(null); // Datos jerárquicos para árboles (puede ser null si no hay raíz única)
+const graphType = ref('force'); // Tipo de gráfico seleccionado por defecto
+const treeContainer = ref(null); // Ref al div contenedor del SVG
+const treeContainerCard = ref(null); // Ref al v-card que contiene el div
+const currentWidth = ref(0); // Ancho actual del contenedor
+const currentHeight = ref(0); // Alto actual del contenedor
+const resizeObserver = ref(null); // Observador de redimensionamiento
+const familyGroups = ref([]); // Lista de grupos familiares para el selector
+const selectedFamily = ref(null); // ID de la familia seleccionada en el selector radial
+const isFullscreen = ref(false);
+let d3Zoom = null; // Referencia a la instancia de zoom de D3
 
-// --- NEW State for View History and Current View ---
-const viewHistory = shallowRef([]); // Use shallowRef for performance if states are large
-const currentViewData = shallowRef(null); // Holds the data object currently being rendered (full tree or family subset)
-const individualsMap = shallowRef(new Map()); // Map for quick node lookup by ID
+// --- State for View History and Current View (Radial Graph Focus) ---
+const viewHistory = shallowRef([]); // Historial de vistas para el botón "Atrás" (usa shallowRef por rendimiento)
+const currentViewData = shallowRef(null); // Datos que se están renderizando actualmente (árbol completo o subconjunto familiar)
+const individualsMap = shallowRef(new Map()); // Mapa para búsqueda rápida de nodos por ID
 
+const gedcomFileName = ref("");
+
+const onLoadGedcomByName = async () => {
+  if (!gedcomFileName.value) return;
+  const fileUrl = `/` + gedcomFileName.value + `.ged`;
+  try {
+    const response = await fetch(fileUrl);
+    if (!response.ok) throw new Error('No se pudo cargar el archivo.');
+    const text = await response.text();
+    gedcomData.value = parseGedcom.parse(text);
+    error.value = null;
+    selectedNode.value = null;
+    showModal.value = false;
+    viewHistory.value = [];
+    selectedFamily.value = null;
+    currentViewData.value = null;
+    forceGraphData.value = buildForceGraphData(gedcomData.value.children);
+    individualsMap.value = new Map(forceGraphData.value.nodes.map(n => [n.id, n]));
+    treeRootData.value = buildTreeRootData(forceGraphData.value);
+    familyGroups.value = buildFamilyGroups(gedcomData.value.children, individualsMap.value);
+    if (["horizontal", "vertical", "hourglass"].includes(graphType.value)) {
+      currentViewData.value = treeRootData.value;
+    } else {
+      currentViewData.value = forceGraphData.value;
+    }
+    nextTick(() => {
+      if (!resizeObserver.value) setupResizeObserver();
+      if (currentWidth.value > 0 && currentHeight.value > 0) {
+        renderGraph();
+      } else {
+        const cardElement = treeContainerCard.value?.$el;
+        if(cardElement) {
+          const initialRect = cardElement.getBoundingClientRect();
+          if (initialRect.width > 0 && initialRect.height > 0) {
+            currentWidth.value = initialRect.width;
+            currentHeight.value = initialRect.height;
+            renderGraph();
+          }
+        }
+      }
+    });
+  } catch (err) {
+    error.value = 'No se pudo cargar el archivo: ' + (err.message || 'Error desconocido.');
+    gedcomData.value = null;
+    forceGraphData.value = null;
+    treeRootData.value = null;
+    individualsMap.value.clear();
+    familyGroups.value = [];
+    viewHistory.value = [];
+    currentViewData.value = null;
+    selectedNode.value = null;
+    showModal.value = false;
+    clearTree();
+  }
+};
+
+// --- Constants ---
 const graphTypes = [
-  { text: 'Force', value: 'force' },
-  { text: 'Horizontal', value: 'horizontal' },
-  { text: 'Resplandor Radial', value: 'vertical' },
-  { text: 'Agrupamiento Relacional', value: 'radial' },
-  // { text: 'Hourglass', value: 'hourglass' }, // Temporarily disable hourglass
+  { text: 'Force', value: 'force' }, // Grafo de fuerza
+  { text: 'Horizontal', value: 'horizontal' }, // Árbol horizontal
+  { text: 'Resplandor Radial', value: 'vertical' }, // Sunburst (llamado vertical aquí)
+  { text: 'Agrupamiento Relacional', value: 'radial' }, // Edge Bundling
+  // { text: 'Hourglass', value: 'hourglass' }, // Gráfico de reloj de arena (deshabilitado temporalmente)
 ];
 
 // --- Computed Properties ---
+
+// Calcula los hermanos del nodo seleccionado para el modal
 const hermanos = computed(() => {
-  // Asegurarse que selectedNode y sus propiedades necesarias existan
   if (!selectedNode.value || !selectedNode.value._parents) return [];
   const siblings = new Set();
-  // Asegurarse que parent.children exista
   selectedNode.value._parents.forEach(parent => {
-    if (parent.children) {
-      parent.children.forEach(child => {
-        // Asegurarse que child.id y selectedNode.value.id existan antes de comparar
-        if (child.id && selectedNode.value.id && child.id !== selectedNode.value.id) {
-           siblings.add(child);
+    // Asegúrate de que el padre exista en el mapa principal para obtener sus hijos actualizados
+    const fullParentData = individualsMap.value.get(parent.id);
+    if (fullParentData && fullParentData.children) {
+      fullParentData.children.forEach(childRef => {
+          // Compara IDs, asegurándose de que no es el nodo seleccionado
+        if (childRef.id && selectedNode.value.id && childRef.id !== selectedNode.value.id) {
+            // Añade la referencia completa del hermano desde el mapa si existe
+            const siblingNode = individualsMap.value.get(childRef.id);
+            if(siblingNode) siblings.add(siblingNode);
         }
       });
     }
@@ -227,102 +325,84 @@ const hermanos = computed(() => {
   return Array.from(siblings);
 });
 
+// Calcula los cónyuges y eventos de relación del nodo seleccionado para el modal
 const conyuges = computed(() => {
-   // Asegurarse que las propiedades necesarias existan
-   if (!selectedNode.value || !selectedNode.value.id || !gedcomData.value || !forceGraphData.value?.nodes) return [];
+   // Necesitamos el nodo seleccionado, datos GEDCOM y el mapa de individuos
+   if (!selectedNode.value || !selectedNode.value.id || !gedcomData.value || !individualsMap.value.size) return [];
+
    const result = [];
    const indiId = selectedNode.value.id;
-   
+
+   // Itera sobre los datos GEDCOM buscando registros FAM
    gedcomData.value.children.forEach(node => {
      if (node.type === 'FAM') {
-       let husb = null, wife = null;
-       // Buscar información sobre cónyuges
+       let husbId = null, wifeId = null;
+       // Encuentra los IDs de esposo (HUSB) y esposa (WIFE) en la familia
        node.children.forEach(n => {
-         if (n.type === 'HUSB') husb = n.data?.pointer;
-         if (n.type === 'WIFE') wife = n.data?.pointer;
+         if (n.type === 'HUSB') husbId = n.data?.pointer;
+         if (n.type === 'WIFE') wifeId = n.data?.pointer;
        });
-       
-       // Si la persona seleccionada es parte de esta familia como cónyuge
-       if ((husb === indiId && wife) || (wife === indiId && husb)) {
-         // Determinar quién es el cónyuge (el otro)
-         const conyugeId = husb === indiId ? wife : husb;
-         const found = forceGraphData.value.nodes.find(n => n.id === conyugeId);
-         
-         if (found) {
-           // Objeto para almacenar todos los eventos de relación
+
+       // Verifica si el individuo seleccionado es uno de los cónyuges en esta FAM
+       if ((husbId === indiId && wifeId) || (wifeId === indiId && husbId)) {
+         // Determina el ID del otro cónyuge
+         const conyugeId = husbId === indiId ? wifeId : husbId;
+         // Busca al cónyuge en nuestro mapa de individuos
+         const spouseNode = individualsMap.value.get(conyugeId);
+
+         if (spouseNode) {
+           // Recopila eventos de relación (Matrimonio, Divorcio, etc.) de esta FAM
            const relationshipEvents = [];
-           
-           // Buscar todos los eventos relacionados con la relación (matrimonio, divorcio, separación, etc.)
            node.children.forEach(event => {
-             // Evento de matrimonio tradicional
+             let eventInfo = null;
+             // Matrimonio
              if (event.type === 'MARR') {
-               const eventInfo = {
-                 type: 'Matrimonio',
-                 date: null,
-                 place: null
-               };
-               
-               event.children?.forEach(detail => {
-                 if (detail.type === 'DATE') eventInfo.date = detail.value;
-                 if (detail.type === 'PLAC') eventInfo.place = detail.value;
-               });
-               
-               relationshipEvents.push(eventInfo);
+               eventInfo = { type: 'Matrimonio', date: null, place: null };
              }
-             
-             // Evento de divorcio tradicional
+             // Divorcio
              else if (event.type === 'DIV') {
-               const eventInfo = {
-                 type: 'Divorcio',
-                 date: null,
-                 place: null
-               };
-               
-               event.children?.forEach(detail => {
-                 if (detail.type === 'DATE') eventInfo.date = detail.value;
-                 if (detail.type === 'PLAC') eventInfo.place = detail.value;
-               });
-               
-               relationshipEvents.push(eventInfo);
+               eventInfo = { type: 'Divorcio', date: null, place: null };
              }
-             
-             // Eventos genéricos con un TYPE especificado (separación, etc.)
+             // Otros eventos (Separación, Anulación, Compromiso, etc.)
              else if (event.type === 'EVEN') {
-               const eventType = event.children?.find(c => c.type === 'TYPE')?.value || 'Evento';
-               
-               // Solo procesamos si es un evento relacionado con la relación
-               // Podemos ampliar esta lista según sea necesario
-               if (['Separation', 'Separación', 'Anulación', 'Annulment', 'Compromiso', 'Engagement'].includes(eventType)) {
-                 const eventInfo = {
-                   type: eventType === 'Separation' ? 'Separación' : eventType,
-                   date: null,
-                   place: null
-                 };
-                 
+               const eventTypeRaw = event.children?.find(c => c.type === 'TYPE')?.value || 'Evento';
+               const relationshipEventTypes = {
+                 'Separation': 'Separación', 'Annulment': 'Anulación', 'Engagement': 'Compromiso'
+                 // Añade más mapeos si es necesario
+               };
+               const mappedType = relationshipEventTypes[eventTypeRaw] || eventTypeRaw;
+               // Solo incluye eventos que consideramos de relación
+               if (['Separación', 'Anulación', 'Compromiso'].includes(mappedType) || eventTypeRaw === 'Separation' || eventTypeRaw === 'Annulment' || eventTypeRaw === 'Engagement') {
+                   eventInfo = { type: mappedType, date: null, place: null };
+               }
+             }
+
+             // Si se identificó un evento de relación, busca fecha y lugar
+             if (eventInfo) {
                  event.children?.forEach(detail => {
                    if (detail.type === 'DATE') eventInfo.date = detail.value;
                    if (detail.type === 'PLAC') eventInfo.place = detail.value;
                  });
-                 
                  relationshipEvents.push(eventInfo);
-               }
              }
            });
-           
-           // Agregar el cónyuge junto con la información de eventos de relación
+           // Añade el cónyuge encontrado junto con sus eventos de relación a los resultados
            result.push({
-             ...found, // Datos del individuo
-             relationshipEvents // Todos los eventos de relación
+             ...spouseNode, // Copia las propiedades del nodo cónyuge
+             relationshipEvents // Añade los eventos encontrados
            });
          }
        }
      }
    });
-   
-   return result;
+
+   return result; // Devuelve la lista de cónyuges con sus eventos
 });
 
+
 // --- Methods ---
+
+// Maneja la selección de un archivo GEDCOM
 const onFileChange = (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -330,40 +410,54 @@ const onFileChange = (e) => {
   reader.onload = (evt) => {
     try {
       const text = evt.target.result;
-      gedcomData.value = parseGedcom.parse(text);
-      error.value = null;
+      gedcomData.value = parseGedcom.parse(text); // Parsea el archivo
+      error.value = null; // Limpia errores previos
+      // Resetea estado relacionado con la visualización anterior
       selectedNode.value = null;
       showModal.value = false;
-      viewHistory.value = []; // Clear history on new file
-      selectedFamily.value = null; // Clear family selection
+      viewHistory.value = [];
+      selectedFamily.value = null;
+      currentViewData.value = null; // Importante resetear vista actual
 
-      // Build data structures first
+      // Construye estructuras de datos necesarias A PARTIR DEL NUEVO ARCHIVO
       forceGraphData.value = buildForceGraphData(gedcomData.value.children);
-      individualsMap.value = new Map(forceGraphData.value.nodes.map(n => [n.id, n])); // Populate map
-      treeRootData.value = buildTreeRootData(forceGraphData.value); // Pass processed nodes
-      familyGroups.value = buildFamilyGroups(gedcomData.value.children, individualsMap.value); // Build family groups
+      individualsMap.value = new Map(forceGraphData.value.nodes.map(n => [n.id, n])); // Popula el mapa ID -> Nodo
+      treeRootData.value = buildTreeRootData(forceGraphData.value); // Construye datos jerárquicos si es posible
+      familyGroups.value = buildFamilyGroups(gedcomData.value.children, individualsMap.value); // Construye lista de familias
 
-      // Set initial view data based on graph type
-      currentViewData.value = ['horizontal', 'vertical', 'radial', 'hourglass'].includes(graphType.value)
-          ? treeRootData.value
-          : forceGraphData.value;
+      // Establece los datos iniciales a visualizar según el tipo de gráfico ACTUALMENTE seleccionado
+      if (['horizontal', 'vertical', 'hourglass'].includes(graphType.value)) {
+          currentViewData.value = treeRootData.value; // Jerárquico para árboles
+      } else { // 'force' y 'radial'
+          currentViewData.value = forceGraphData.value; // {nodes, links}
+      }
 
-      // Reset graph type to default if needed, or keep current one
-      // graphType.value = 'force';
-
-      // Trigger rendering AFTER data is ready
+      // Espera al siguiente tick para asegurar que el DOM esté listo
       nextTick(() => {
-          setupResizeObserver(); // Setup observer after file load
-          // Initial render will be triggered by observer callback
-          if (currentWidth.value > 0 && currentHeight.value > 0) {
-              renderGraph();
-          }
+        if (!resizeObserver.value) { // Configura el observador SOLO si no existe ya
+             setupResizeObserver();
+        }
+        // Renderiza inmediatamente si ya hay dimensiones, si no, el observer lo hará
+        if (currentWidth.value > 0 && currentHeight.value > 0) {
+          renderGraph();
+        } else {
+            // Fuerza la obtención de dimensiones iniciales si el observer no lo hizo aún
+            const cardElement = treeContainerCard.value?.$el;
+            if(cardElement) {
+                const initialRect = cardElement.getBoundingClientRect();
+                if (initialRect.width > 0 && initialRect.height > 0) {
+                    currentWidth.value = initialRect.width;
+                    currentHeight.value = initialRect.height;
+                    renderGraph();
+                }
+            }
+        }
       });
 
     } catch (err) {
-      // ... existing error handling ...
       console.error("Error processing GEDCOM:", err);
-      error.value = `Error al procesar el archivo: ${err.message}`;
+      error.value = `Error al procesar el archivo: ${err.message || 'Formato inválido o error inesperado.'}`;
+      // Limpia TODO el estado en caso de error
       gedcomData.value = null;
       forceGraphData.value = null;
       treeRootData.value = null;
@@ -371,558 +465,814 @@ const onFileChange = (e) => {
       familyGroups.value = [];
       viewHistory.value = [];
       currentViewData.value = null;
-      clearTree();
+      selectedNode.value = null;
+      showModal.value = false;
+      clearTree(); // Limpia el SVG
     }
+  };
+  reader.onerror = (err) => {
+      console.error("Error reading file:", err);
+      error.value = "Error al leer el archivo.";
+      clearTree();
   };
   reader.readAsText(file);
 };
 
-// Renamed: Builds the {nodes, links} structure for force layout AND base for tree
+// Construye la estructura {nodes, links} para grafos de fuerza y radial
+// También añade referencias _parents, children, spouses a cada nodo
 const buildForceGraphData = (gedcomNodes) => {
-  const individuals = {};
-  const families = {};
-  const spousesMap = new Map(); // Track spouses for each individual
+  const individuals = {}; // Almacena nodos individuales por ID
+  const families = {}; // Almacena registros FAM por ID
 
-  // Pass 1: Create individual nodes
+  // Pass 1: Crear nodos individuales a partir de registros INDI
   gedcomNodes.forEach(node => {
     if (node.type === 'INDI') {
       const id = node.data?.xref_id;
-      if (!id) return;
-      const nameNode = node.children.find(n => n.type === 'NAME');
+      if (!id) {
+          console.warn("Individuo sin ID encontrado, será ignorado:", node);
+          return; // Ignora individuos sin ID
+      }
+      const nameNode = node.children?.find(n => n.type === 'NAME');
+      // Crea el objeto nodo básico
       individuals[id] = {
         id,
-        name: nameNode ? nameNode.value.replace(/[\/\\]/g, '').trim() : 'Sin nombre',
-        raw: node, // Keep raw data for details modal
-        generation: null,
-        _parents: [], // References to parent objects
-        children: [], // References to child objects (for tree)
-        spouses: [], // References to spouse objects
-        // D3 simulation properties will be added later, keep data clean initially
+        name: nameNode ? nameNode.value.replace(/[\/\\]/g, '').trim() : `Individuo ${id}`, // Nombre o ID por defecto
+        raw: node, // Guarda datos crudos para el modal
+        generation: null, // Se calculará después
+        _parents: [], // Referencias a objetos nodo padre (se llenará en Pass 2)
+        children: [], // Referencias a objetos nodo hijo (se llenará en Pass 2)
+        spouses: [], // Referencias a objetos nodo cónyuge (se llenará en Pass 2)
       };
     }
+    // Almacena registros FAM para Pass 2
     if (node.type === 'FAM') {
       const id = node.data?.xref_id;
       if (id) families[id] = node;
+      else console.warn("Familia sin ID encontrada, será ignorada:", node);
     }
   });
 
-  // Pass 2: Link individuals based on families
-  const links = [];
+  // Pass 2: Enlazar individuos basado en familias y añadir referencias cruzadas
+  const links = []; // Array para los enlaces de la visualización
   Object.values(families).forEach(fam => {
-    let parentIds = [];
-    let childIds = [];
+    let parentIds = []; // IDs de padres (HUSB, WIFE) en esta familia
+    let childIds = []; // IDs de hijos (CHIL) en esta familia
 
-    fam.children.forEach(n => {
+    // Extrae IDs de padres e hijos de la familia actual
+    fam.children?.forEach(n => {
       const pointer = n.data?.pointer;
-      if (!pointer || !individuals[pointer]) return;
-
-      if (n.type === 'HUSB' || n.type === 'WIFE') {
-        parentIds.push(pointer);
-      }
-      if (n.type === 'CHIL') {
-        childIds.push(pointer);
+      // Importante: Verifica que el individuo apuntado exista en nuestro mapa 'individuals'
+      if (pointer && individuals[pointer]) {
+          if (n.type === 'HUSB' || n.type === 'WIFE') parentIds.push(pointer);
+          if (n.type === 'CHIL') childIds.push(pointer);
+      } else if (pointer) {
+          console.warn(`Referencia a individuo inexistente (${pointer}) en FAM ${fam.data?.xref_id}`);
       }
     });
 
-    // Link parents to children
+    // Enlazar padres con hijos y añadir referencias _parents/children
     parentIds.forEach(parentId => {
-      const parentNode = individuals[parentId];
+      const parentNode = individuals[parentId]; // Nodo padre ya existe
       childIds.forEach(childId => {
-        const childNode = individuals[childId];
-        if (parentNode && childNode) {
-          links.push({ source: parentId, target: childId, type: 'parent' });
-          // Add references for tree building and details modal
-          if (!childNode._parents.some(p => p.id === parentId)) {
-              childNode._parents.push(parentNode);
-          }
-          if (!parentNode.children.some(c => c.id === childId)) {
-              parentNode.children.push(childNode);
-          }
+        const childNode = individuals[childId]; // Nodo hijo ya existe
+        // Crea el enlace para D3 si ambos nodos existen
+        links.push({ source: parentId, target: childId, type: 'parent' }); // Enlace visual
+        // Añade referencias cruzadas en los objetos nodo si no existen ya
+        if (!childNode._parents.some(p => p.id === parentId)) {
+          childNode._parents.push(parentNode); // Hijo referencia al Padre
+        }
+        if (!parentNode.children.some(c => c.id === childId)) {
+          parentNode.children.push(childNode); // Padre referencia al Hijo
         }
       });
     });
 
-    // Link spouses
+    // Enlazar cónyuges y añadir referencias spouses
     if (parentIds.length === 2) {
-      const p1 = individuals[parentIds[0]];
-      const p2 = individuals[parentIds[1]];
-      if (p1 && p2) {
-        links.push({ source: parentIds[0], target: parentIds[1], type: 'spouse' });
-        if (!p1.spouses.some(s => s.id === parentIds[1])) {
-            p1.spouses.push(p2);
-        }
-        if (!p2.spouses.some(s => s.id === parentIds[0])) {
-            p2.spouses.push(p1);
-        }
+      const p1Id = parentIds[0];
+      const p2Id = parentIds[1];
+      const p1Node = individuals[p1Id];
+      const p2Node = individuals[p2Id];
+      // Crea el enlace para D3
+      links.push({ source: p1Id, target: p2Id, type: 'spouse' }); // Enlace visual
+      // Añade referencias cruzadas en los objetos nodo si no existen ya
+      if (!p1Node.spouses.some(s => s.id === p2Id)) {
+        p1Node.spouses.push(p2Node); // p1 referencia a p2 como cónyuge
       }
+      if (!p2Node.spouses.some(s => s.id === p1Id)) {
+        p2Node.spouses.push(p1Node); // p2 referencia a p1 como cónyuge
+      }
+    } else if (parentIds.length === 1) {
+        // Podría ser una familia monoparental o incompleta, no se crean enlaces de cónyuge.
+        // Se podría añadir lógica aquí si se desea manejar explícitamente.
     }
   });
 
-  const nodes = Object.values(individuals);
+  const nodes = Object.values(individuals); // Array final de nodos
 
-  // Calculate generations (optional but useful for coloring/layout)
-   const roots = nodes.filter(n => n._parents.length === 0);
-   const visited = new Set();
-   function setGeneration(node, gen) {
-       if (!node || visited.has(node.id)) return;
-       visited.add(node.id);
-       // Assign generation if null or if this path is shorter
-       if (node.generation === null || gen < node.generation) {
-           node.generation = gen;
-       }
-       // Recursively set for children
-       node.children.forEach(child => setGeneration(child, gen + 1));
-   }
-   roots.forEach(root => setGeneration(root, 0));
-   // Assign generation to others who might not be reachable from main roots (e.g., separate trees)
-   nodes.forEach(n => { if (n.generation === null) n.generation = 0; }); // Or handle differently
+  // Calcular generaciones (opcional, útil para colorear/layout)
+  const roots = nodes.filter(n => n._parents.length === 0); // Nodos sin padres en este dataset
+  const visited = new Set();
+  function setGeneration(node, gen) {
+    if (!node || visited.has(node.id)) return; // Evita ciclos y redundancia
+    visited.add(node.id);
+    // Asigna generación si es null o si este camino es más corto (menos generaciones)
+    if (node.generation === null || gen < node.generation) {
+      node.generation = gen;
+    }
+    // Recursivamente para hijos
+    node.children.forEach(childRef => {
+        // Importante: Llama a setGeneration con el nodo completo del mapa
+        const childNode = individuals[childRef.id];
+        if(childNode) setGeneration(childNode, gen + 1);
+    });
+  }
+  // Inicia el cálculo desde cada raíz encontrada
+  roots.forEach(root => setGeneration(root, 0));
+  // Asigna generación 0 a nodos no alcanzados (posibles árboles desconectados)
+  nodes.forEach(n => { if (n.generation === null) n.generation = 0; });
 
-
-  // Return a deep clone for force layout if D3 modifies it? No, D3 works on the objects.
-  // Just ensure tree building uses the correct references.
-  return { nodes, links };
+  console.log(`buildForceGraphData: ${nodes.length} nodos, ${links.length} enlaces.`);
+  return { nodes, links }; // Devuelve la estructura para D3
 };
 
-// Renamed: Builds the hierarchical root structure needed for D3 tree layouts
+
+// Construye la estructura de raíz jerárquica para D3 Tree/Cluster/Sunburst
 const buildTreeRootData = (graphData) => {
-  if (!graphData || !graphData.nodes) return null;
+  if (!graphData || !graphData.nodes || graphData.nodes.length === 0) return null;
 
-  // Crear un mapa para búsqueda rápida
-  const individualsMap = new Map(graphData.nodes.map(n => [n.id, n]));
+  // Usa el mapa ya creado para eficiencia
+  const individualsMapLocal = new Map(graphData.nodes.map(n => [n.id, n]));
 
-  // Encontrar nodos raíz (aquellos sin padres en este conjunto de datos)
-  const roots = graphData.nodes.filter(n => n._parents.length === 0);
+  // Encuentra nodos raíz (sin padres en ESTE conjunto de datos)
+  // Asegúrate de que _parents se refiere a los nodos completos, no solo IDs
+  const roots = graphData.nodes.filter(n => !n._parents || n._parents.length === 0);
 
-  if (roots.length === 0 && graphData.nodes.length > 0) {
-    console.warn("No root nodes found. Creating a virtual root.");
-    // Crear una raíz virtual que contenga todos los nodos como hijos
+  if (roots.length === 0) {
+    console.warn("No se encontraron nodos raíz (sin padres). Creando raíz virtual con todos los nodos.");
+    // Crea una raíz virtual que contenga todos los nodos como hijos directos
+    // Esto es útil para visualizar grafos desconectados o cíclicos como un "bosque"
     return { name: 'Raíces Múltiples', id: '__virtual_root__', children: graphData.nodes };
   }
 
   if (roots.length === 1) {
-    // Si hay un solo nodo raíz, usarlo directamente
-    return { ...roots[0], children: roots[0].children || [] };
+    console.log("Se encontró una única raíz:", roots[0].name);
+    // Si hay una sola raíz, D3 la manejará directamente.
+    // No es necesario clonar aquí si buildForceGraphData ya lo hizo,
+    // pero asegúrate de que la propiedad 'children' esté presente.
+    return roots[0];
   } else {
-    // Si hay múltiples raíces, crear una raíz virtual
-    return { name: 'Raíces', id: '__virtual_root__', children: roots };
+    console.warn(`Se encontraron ${roots.length} raíces. Creando raíz virtual.`);
+    // Si hay múltiples raíces, crea una raíz virtual para que D3 las agrupe
+    return { name: 'Raíces Múltiples', id: '__virtual_root__', children: roots };
   }
 };
 
-// Update buildFamilyGroups to use the individualsMap
+
+// Construye la lista de grupos familiares para el selector
 const buildFamilyGroups = (gedcomNodes, individualsMap) => {
   const families = [];
   gedcomNodes.forEach(node => {
     if (node.type === 'FAM') {
       const id = node.data?.xref_id;
-      if (!id) return;
+      if (!id) return; // Ignora familias sin ID
 
-      const husbId = node.children.find(n => n.type === 'HUSB')?.data?.pointer;
-      const wifeId = node.children.find(n => n.type === 'WIFE')?.data?.pointer;
+      const husbId = node.children?.find(n => n.type === 'HUSB')?.data?.pointer;
+      const wifeId = node.children?.find(n => n.type === 'WIFE')?.data?.pointer;
 
-      const husbName = individualsMap.get(husbId)?.name || 'Desconocido';
-      const wifeName = individualsMap.get(wifeId)?.name || 'Desconocida';
+      // Usa el mapa para obtener nombres eficientemente
+      const husbName = individualsMap.get(husbId)?.name || '??'; // Nombre corto para desconocido
+      const wifeName = individualsMap.get(wifeId)?.name || '??';
+
+      // Cuenta hijos para posible información adicional
+      const childCount = node.children?.filter(n => n.type === 'CHIL').length || 0;
 
       families.push({
         id,
-        name: `${husbName} & ${wifeName}`,
-        raw: node // Keep raw FAM data if needed
+        name: `${husbName} & ${wifeName} (${childCount} hijos)`, // Nombre descriptivo
+        raw: node // Guarda datos crudos de FAM si se necesitan después
       });
     }
   });
-  return families.sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
+  // Ordena alfabéticamente por el nombre generado
+  return families.sort((a, b) => a.name.localeCompare(b.name));
 };
 
-// --- NEW Focus and Navigation Logic ---
+// --- Focus and Navigation Logic (for Radial Graph) ---
 
+// Enfoca la vista radial en una persona y su familia inmediata
 const handleNodeFocus = (personData) => {
-  console.log("Focus requested for:", personData.name);
-  const person = individualsMap.value.get(personData.id);
-  if (!person) {
-      console.error("Person not found in map:", personData.id);
+  // Verifica que personData y su ID existan
+  if (!personData || !personData.id) {
+      console.error("handleNodeFocus: Se recibió personData inválido.");
       return;
   }
-
-  // Save current state BEFORE changing view
-  if (currentViewData.value) {
-      viewHistory.value.push(currentViewData.value);
+  console.log("Solicitud de enfoque para:", personData.name || personData.id);
+  // Busca a la persona en el mapa principal usando el ID
+  const person = individualsMap.value.get(personData.id);
+  if (!person) {
+    console.error("Persona no encontrada en el mapa:", personData.id);
+    return; // No se puede enfocar si la persona no está en el mapa
   }
 
-  // Gather nodes: person, parents, spouses, children
+  // Guarda el estado actual ANTES de cambiar la vista, si es diferente al último guardado
+  if (currentViewData.value && (!viewHistory.value.length || viewHistory.value[viewHistory.value.length - 1] !== currentViewData.value)) {
+     viewHistory.value.push(currentViewData.value);
+     console.log("Historial guardado, tamaño:", viewHistory.value.length);
+  }
+
+  // Reúne nodos: la persona, sus padres, sus cónyuges, y sus hijos
   const familyNodeSet = new Set();
-  familyNodeSet.add(person);
-  person._parents.forEach(p => familyNodeSet.add(p));
-  person.spouses.forEach(s => familyNodeSet.add(s));
-  person.children.forEach(c => familyNodeSet.add(c));
+  familyNodeSet.add(person); // Añade a la persona central
+  // Añade padres (asegúrate de que existan en el mapa)
+  person._parents?.forEach(pRef => individualsMap.value.has(pRef.id) && familyNodeSet.add(individualsMap.value.get(pRef.id)));
+  // Añade cónyuges
+  person.spouses?.forEach(sRef => individualsMap.value.has(sRef.id) && familyNodeSet.add(individualsMap.value.get(sRef.id)));
+  // Añade hijos
+  person.children?.forEach(cRef => individualsMap.value.has(cRef.id) && familyNodeSet.add(individualsMap.value.get(cRef.id)));
 
-  const familyNodes = Array.from(familyNodeSet);
-  const familyNodeIds = new Set(familyNodes.map(n => n.id));
+  const familyNodes = Array.from(familyNodeSet); // Convierte el Set a Array
+  const familyNodeIds = new Set(familyNodes.map(n => n.id)); // Set de IDs para búsqueda rápida
 
-  // Gather links connecting ONLY these nodes
+  // Reúne enlaces que conectan SOLAMENTE a los nodos de este grupo familiar
   const familyLinks = [];
-  familyNodes.forEach(node => {
-      // Parent links (Child -> Parent)
-      node._parents.forEach(parent => {
-          if (familyNodeIds.has(parent.id)) {
-              // Add both directions? EdgeBundling might handle this, let's add specific types
-              familyLinks.push({ source: node.id, target: parent.id, type: 'parent' }); // Child points to Parent
-              familyLinks.push({ source: parent.id, target: node.id, type: 'child' }); // Parent points to Child
-          }
-      });
-      // Spouse links
-      node.spouses.forEach(spouse => {
-          if (familyNodeIds.has(spouse.id)) {
-              // Add only one direction for spouses to avoid duplicates if getUniqueConnections sorts
-              if (node.id < spouse.id) {
-                  familyLinks.push({ source: node.id, target: spouse.id, type: 'spouse' });
-              }
-          }
-      });
-      // Child links already covered by parent links check above
+  // Itera sobre TODOS los enlaces originales del grafo completo
+  forceGraphData.value.links.forEach(link => {
+    // Obtiene IDs de source y target (pueden ser objetos o strings)
+    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+    // Si AMBOS extremos del enlace pertenecen al grupo familiar, incluye el enlace
+    if (familyNodeIds.has(sourceId) && familyNodeIds.has(targetId)) {
+      // Asegura que el enlace use los IDs, no los objetos nodo completos
+      familyLinks.push({ ...link, source: sourceId, target: targetId });
+    }
   });
 
-  // Create the new data structure for the radial view
+  // Crea la nueva estructura de datos para la vista radial enfocada
   const familyGraphData = {
-      nodes: familyNodes,
-      links: familyLinks,
-      // Add a flag or name to indicate this is a focused view
-      _isFamilyFocus: true,
-      _focusPersonName: person.name
+    nodes: familyNodes, // Nodos del grupo familiar
+    links: familyLinks, // Enlaces filtrados del grupo familiar
+    _isFamilyFocus: true, // Marca como vista enfocada
+    _focusPersonName: person.name || person.id // Guarda el nombre para posible título
   };
 
-  currentViewData.value = familyGraphData;
-  selectedFamily.value = null; // Clear dropdown selection when focusing manually
-  nextTick(renderGraph);
+  currentViewData.value = familyGraphData; // Actualiza los datos a renderizar
+  selectedFamily.value = null; // Limpia selección del dropdown (ya que enfocamos manualmente)
+  console.log(`Enfocando en ${person.name}. Nodos: ${familyNodes.length}, Enlaces: ${familyLinks.length}`);
+  nextTick(renderGraph); // Renderiza la nueva vista enfocada
 };
 
+
+// Abre el modal con detalles del nodo
 const handleNodeModal = (d) => {
-    // D3 hierarchy nodes wrap data in d.data, force nodes are direct
-    const nodeData = d.data ? d.data : d;
-    // Find the original node data using the map
-    const originalNode = individualsMap.value.get(nodeData.id);
-    selectedNode.value = originalNode || nodeData; // Prefer original node with full data
-    showModal.value = true;
-    console.log("Modal requested for:", selectedNode.value?.name);
+  // Los nodos de jerarquía D3 envuelven datos en d.data, los nodos de fuerza/radial son directos
+  const nodeData = d?.data ? d.data : d; // Obtiene los datos subyacentes
+  if (!nodeData || !nodeData.id) {
+      console.error("handleNodeModal: Datos de nodo inválidos o sin ID.", d);
+      selectedNode.value = null; // Limpia selección
+      showModal.value = false;
+      return;
+  }
+  // Encuentra los datos originales completos usando el mapa principal
+  const originalNode = individualsMap.value.get(nodeData.id);
+  if (!originalNode) {
+      console.error("handleNodeModal: Nodo no encontrado en individualsMap:", nodeData.id);
+      // Podríamos mostrar el nodeData parcial, pero es mejor indicar el error
+      selectedNode.value = { name: `Error: Nodo ${nodeData.id} no encontrado`, id: nodeData.id, raw: null, _parents:[], children:[], spouses:[] };
+  } else {
+      selectedNode.value = originalNode; // Usa el nodo completo del mapa
+  }
+  console.log("Solicitud de modal para:", selectedNode.value?.name);
+  showModal.value = true; // Muestra el modal
 };
 
+
+// Retrocede en el historial de vistas del gráfico radial
 const goBack = () => {
   if (viewHistory.value.length > 0) {
-    const previousViewData = viewHistory.value.pop();
-    currentViewData.value = previousViewData;
-    selectedFamily.value = null; // Clear dropdown selection when going back
-    nextTick(renderGraph);
+    const previousViewData = viewHistory.value.pop(); // Saca la última vista guardada
+    currentViewData.value = previousViewData; // Restaura datos anteriores
+    selectedFamily.value = null; // Limpia selección del dropdown
+    console.log("Retrocediendo en historial. Vistas restantes:", viewHistory.value.length);
+    nextTick(renderGraph); // Renderiza vista anterior
   } else {
-      console.log("No history to go back to.");
+    console.log("No hay historial para retroceder.");
+    // Opcional: Podríamos volver a la vista completa si no hay historial
+    // currentViewData.value = forceGraphData.value;
+    // nextTick(renderGraph);
   }
 };
 
 // --- Updated Interaction Logic ---
 
+// Maneja la selección de una familia desde el dropdown (para vista radial)
 const onFamilySelected = (familyId) => {
-  viewHistory.value = []; // Clear history when selecting from dropdown
+  viewHistory.value = []; // Limpia historial al seleccionar desde dropdown (nueva secuencia)
 
   if (!familyId) {
-    // Render full tree
-    currentViewData.value = treeRootData.value; // Set view to full tree
+    // Si se deselecciona ("Ver árbol completo"), muestra el grafo completo {nodes, links}
+    console.log("Mostrando árbol completo (radial).");
+    currentViewData.value = forceGraphData.value;
     nextTick(renderGraph);
     return;
   }
 
+  // Busca la familia seleccionada en la lista pre-calculada
   const family = familyGroups.value.find(f => f.id === familyId);
-  if (!family || !family.raw) {
-      console.error("Selected family or raw data not found:", familyId);
-      currentViewData.value = treeRootData.value; // Fallback to full tree
-      nextTick(renderGraph);
-      return;
-  }
-
-  // --- Logic similar to handleNodeFocus but based on FAM record ---
-  const familyNodeSet = new Set();
-  const familyLinks = [];
-  const familyNodeIds = new Set();
-
-  // Add parents (HUSB, WIFE) and children (CHIL) from FAM record
-  family.raw.children.forEach(n => {
-    const pointer = n.data?.pointer;
-    if (!pointer) return;
-
-    if (n.type === 'HUSB' || n.type === 'WIFE' || n.type === 'CHIL') {
-      const individual = individualsMap.value.get(pointer);
-      if (individual) {
-        familyNodeSet.add(individual);
-        familyNodeIds.add(individual.id);
-      }
-    }
-  });
-
-  const familyNodes = Array.from(familyNodeSet);
-
-  // Rebuild links based on the nodes found
-  familyNodes.forEach(node => {
-      // Parent links
-      node._parents.forEach(parent => {
-          if (familyNodeIds.has(parent.id)) {
-              familyLinks.push({ source: node.id, target: parent.id, type: 'parent' });
-              familyLinks.push({ source: parent.id, target: node.id, type: 'child' });
-          }
-      });
-      // Spouse links
-      node.spouses.forEach(spouse => {
-          if (familyNodeIds.has(spouse.id)) {
-              if (node.id < spouse.id) { // Avoid duplicates
-                  familyLinks.push({ source: node.id, target: spouse.id, type: 'spouse' });
-              }
-          }
-      });
-  });
-
-  const familyGraphData = {
-      nodes: familyNodes,
-      links: familyLinks,
-      _isFamilyFocus: true, // Mark as focused view
-      _focusPersonName: family.name // Use family name
-  };
-
-  currentViewData.value = familyGraphData;
-  nextTick(renderGraph);
-};
-
-
-const clearTree = () => {
-  console.log("Clearing tree container");
-  if (simulation.value) {
-    simulation.value.stop(); // Stop force simulation if running
-    simulation.value = null;
-  }
-  if (treeContainer.value) {
-    d3.select(treeContainer.value).selectAll('*').remove(); // Remove all SVG elements
-  } else {
-      console.warn("clearTree called but treeContainer ref is null");
-  }
-};
-
-const handleNodeClick = (d) => {
-    // D3 hierarchy nodes wrap data in d.data, force nodes are direct
-    const nodeData = d.data ? d.data : d;
-    // Find the original node data if needed (e.g., to get raw GEDCOM)
-    const originalNode = forceGraphData.value?.nodes.find(n => n.id === nodeData.id);
-    selectedNode.value = originalNode || nodeData; // Prefer original node with full data
-    showModal.value = true;
-    console.log("Node clicked:", selectedNode.value);
-};
-
-const setupResizeObserver = () => {
-    if (resizeObserver.value) {
-        resizeObserver.value.disconnect(); // Disconnect previous observer if any
-    }
-    if (!treeContainerCard.value?.$el) {
-        console.error("Cannot set up ResizeObserver: treeContainerCard element not found.");
-        return;
-    }
-
-    resizeObserver.value = new ResizeObserver(entries => {
-        if (!entries || entries.length === 0) return;
-        const { width, height } = entries[0].contentRect;
-
-        if (width > 0 && height > 0 && (width !== currentWidth.value || height !== currentHeight.value)) {
-            console.log(`Resized to: ${width}x${height}`);
-            currentWidth.value = width;
-            currentHeight.value = height;
-            // Debounce or directly call renderGraph if dimensions are stable
-            renderGraph(); // Re-render with new dimensions
-        }
-    });
-
-    resizeObserver.value.observe(treeContainerCard.value.$el);
-    console.log("ResizeObserver set up on card element.");
-};
-
-
-// --- Updated Render Logic ---
-const renderGraph = () => {
-  // Ensure container and dimensions are ready
-  if (!treeContainer.value || currentWidth.value <= 0 || currentHeight.value <= 0) {
-      console.warn("Render conditions not met (container/dimensions):", { hasContainer: !!treeContainer.value, width: currentWidth.value, height: currentHeight.value });
-      return;
-  }
-
-  // Determine the data to render based on currentViewData
-  let dataToRender = currentViewData.value ||
-                       (['horizontal', 'vertical', 'radial', 'hourglass'].includes(graphType.value)
-                           ? treeRootData.value
-                           : forceGraphData.value);
-
-  // Check if data is valid for the selected graph type
-  if (!dataToRender) {
-      // Don't show error if it's just initial load without data
-      if (gedcomData.value) {
-          error.value = "No hay datos disponibles para visualizar.";
-          console.error(error.value);
-      } else {
-          console.log("Waiting for data to load...");
-      }
-      clearTree();
-      return;
-  }
-  // Specific checks for data structure based on type
-  if (graphType.value === 'force' && (!dataToRender.nodes || !dataToRender.links)) {
-      error.value = "Datos inválidos para grafo de fuerza (se esperan nodos y enlaces).";
-      console.error(error.value, dataToRender);
-      clearTree();
-      return;
-  }
-  // For tree types, check if it's hierarchical or the special family focus structure
-  if (['horizontal', 'vertical', 'radial', 'hourglass'].includes(graphType.value)) {
-      if (!dataToRender.children && !dataToRender._isFamilyFocus && dataToRender.id !== '__virtual_root__') {
-          // It's not a standard hierarchy root and not our special family focus object
-          // Check if it's a single node (might happen if root has no children)
-          if (!dataToRender.id || !dataToRender.name) {
-              error.value = "Datos inválidos para la estructura de árbol.";
-              console.error(error.value, dataToRender);
-              clearTree();
-              return;
-          }
-          // If it's just a single node, wrap it for hierarchy function
-          // dataToRender = { name: "Raíz Única", children: [dataToRender] }; // D3 might handle single node okay
-      }
-  }
-
-  // Asegurarse de que los datos sean válidos antes de renderizar
-  if (!dataToRender || (graphType.value === 'radial' && !dataToRender.children && !dataToRender.nodes)) {
-    console.error("Datos inválidos para el gráfico:", dataToRender);
-    error.value = "Datos inválidos para el gráfico.";
-    clearTree();
+  // Verifica que la familia y sus datos crudos (raw FAM record) existan
+  if (!family || !family.raw || !family.raw.children) {
+    console.error("Familia seleccionada o datos crudos inválidos:", familyId, family);
+    // Como fallback, muestra el árbol completo
+    error.value = "Error al cargar datos de la familia seleccionada.";
+    currentViewData.value = forceGraphData.value;
+    nextTick(renderGraph);
     return;
   }
 
-  // Convertir a jerarquía de D3 si es necesario
-  if (graphType.value === 'radial' && dataToRender && !dataToRender.descendants) {
-    try {
-      dataToRender = d3.hierarchy(dataToRender, d => (d && d.children) || []);
-    } catch (error) {
-      console.error("Error al convertir dataToRender a jerarquía de D3:", error);
-      error.value = "Error al procesar los datos para el gráfico radial.";
-      clearTree();
-      return;
+  console.log("Seleccionada familia:", family.name);
+  // --- Lógica similar a handleNodeFocus pero basada en registro FAM ---
+  const familyNodeSet = new Set(); // Set para nodos de la familia
+  const familyNodeIds = new Set(); // Set para IDs de nodos (búsqueda rápida)
+
+  // Añade padres (HUSB, WIFE) e hijos (CHIL) del registro FAM al Set
+  family.raw.children.forEach(n => {
+    const pointer = n.data?.pointer;
+    if (!pointer) return; // Ignora si no hay puntero
+    // Solo procesa HUSB, WIFE, CHIL
+    if (n.type === 'HUSB' || n.type === 'WIFE' || n.type === 'CHIL') {
+      // Busca el individuo completo en el mapa principal
+      const individual = individualsMap.value.get(pointer);
+      if (individual) {
+        familyNodeSet.add(individual); // Añade el nodo completo
+        familyNodeIds.add(individual.id); // Añade el ID para búsqueda
+      } else {
+          console.warn(`Individuo ${pointer} de FAM ${family.id} no encontrado en mapa principal.`);
+      }
     }
+  });
+
+  const familyNodes = Array.from(familyNodeSet); // Convierte el Set a Array
+
+  // Reconstruye enlaces filtrando los enlaces globales
+  const familyLinks = [];
+  forceGraphData.value.links.forEach(link => {
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+      // Incluye el enlace si ambos extremos están en el Set de IDs de la familia
+      if (familyNodeIds.has(sourceId) && familyNodeIds.has(targetId)) {
+          familyLinks.push({ ...link, source: sourceId, target: targetId });
+      }
+  });
+
+  // Crea la estructura de datos para la vista de familia
+  const familyGraphData = {
+    nodes: familyNodes,
+    links: familyLinks,
+    _isFamilyFocus: true, // Marca como vista enfocada (aunque sea por selección)
+    _focusPersonName: family.name // Usa nombre de familia para posible título
+  };
+
+  currentViewData.value = familyGraphData; // Actualiza datos a renderizar
+  console.log(`Mostrando familia ${family.name}. Nodos: ${familyNodes.length}, Enlaces: ${familyLinks.length}`);
+  nextTick(renderGraph); // Renderiza
+};
+
+
+// Limpia el contenedor SVG y detiene simulaciones D3 si existen
+const clearTree = () => {
+  console.log("Limpiando contenedor SVG...");
+  // Detiene la simulación de fuerza si está activa
+  if (simulation.value) {
+    simulation.value.stop();
+    simulation.value = null;
+    console.log("Simulación D3 detenida.");
+  }
+  // Elimina todo el contenido del div contenedor del SVG
+  if (treeContainer.value) {
+    d3.select(treeContainer.value).selectAll('*').remove();
+  } else {
+    // Esto puede pasar si se llama antes de que el componente esté montado
+    console.warn("clearTree llamado pero treeContainer ref aún no está disponible.");
+  }
+};
+
+
+// Configura el ResizeObserver en el v-card contenedor para detectar cambios de tamaño
+const setupResizeObserver = () => {
+  // Desconecta observador previo si existe (evita duplicados)
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect();
+  }
+  // Obtiene el elemento DOM del v-card usando la ref
+  // Es crucial acceder a .$el para obtener el elemento HTML real del componente Vuetify
+  const cardElement = treeContainerCard.value?.$el;
+  if (!cardElement) {
+    // Si el elemento no está listo, reintenta después de un breve delay.
+    // Esto puede ocurrir si el componente se monta pero el DOM interno de v-card tarda un poco más.
+    console.warn("Elemento v-card (treeContainerCard.$el) no encontrado. Reintentando configuración de ResizeObserver...");
+    setTimeout(setupResizeObserver, 150); // Reintenta después de 150ms
+    return;
   }
 
-  clearTree(); // Clear previous graph
+  // Crea una nueva instancia de ResizeObserver
+  resizeObserver.value = new ResizeObserver(entries => {
+    if (!entries || entries.length === 0) return; // No hacer nada si no hay entradas
+    // Obtiene las nuevas dimensiones del contenido del elemento observado
+    const { width, height } = entries[0].contentRect;
 
-  console.log(`Rendering graph type: ${graphType.value} with data:`, dataToRender);
-  error.value = null; // Clear previous errors
+    // Solo actualiza y re-renderiza si las dimensiones son válidas (>0)
+    // y si realmente han cambiado respecto a las almacenadas
+    if (width > 0 && height > 0 && (width !== currentWidth.value || height !== currentHeight.value)) {
+      console.log(`Contenedor redimensionado a: ${width}x${height}`);
+      currentWidth.value = width; // Actualiza el ancho almacenado
+      currentHeight.value = height; // Actualiza el alto almacenado
+      // Re-renderiza el gráfico con las nuevas dimensiones
+      // Considera añadir un 'debounce' aquí si el renderizado es muy costoso
+      // y los eventos de resize se disparan muy rápido.
+      renderGraph();
+    }
+  });
 
+  // Empieza a observar el elemento DOM del v-card
+  resizeObserver.value.observe(cardElement);
+  console.log("ResizeObserver configurado y observando el v-card.");
+
+  // Llama una vez manualmente para obtener dimensiones iniciales después de montar,
+  // en caso de que el tamaño ya sea estable y el observer no se dispare.
+  const initialRect = cardElement.getBoundingClientRect();
+   if (initialRect.width > 0 && initialRect.height > 0 && (currentWidth.value !== initialRect.width || currentHeight.value !== initialRect.height)) {
+        currentWidth.value = initialRect.width;
+        currentHeight.value = initialRect.height;
+        console.log(`Dimensiones iniciales obtenidas: ${currentWidth.value}x${currentHeight.value}`);
+        // Solo renderiza si ya hay datos cargados (evita renderizar en vacío al inicio)
+        if (currentViewData.value || forceGraphData.value) {
+             renderGraph();
+        }
+   }
+};
+
+// --- Render Logic ---
+
+// Función principal para renderizar el gráfico seleccionado
+const renderGraph = () => {
+  // --- Pre-condiciones para renderizar ---
+  // 1. Contenedor DIV debe existir en el DOM
+  if (!treeContainer.value) {
+      console.warn("Intento de renderizar sin contenedor (treeContainer). Abortando.");
+      return;
+  }
+  // 2. Dimensiones deben ser válidas (mayores que 0)
+  if (currentWidth.value <= 0 || currentHeight.value <= 0) {
+      console.warn(`Intento de renderizar con dimensiones inválidas (${currentWidth.value}x${currentHeight.value}). Abortando.`);
+      // Podríamos intentar obtener las dimensiones aquí de nuevo como último recurso
+      const cardElement = treeContainerCard.value?.$el;
+      if (cardElement) {
+          const rect = cardElement.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+              currentWidth.value = rect.width;
+              currentHeight.value = rect.height;
+              console.log("Dimensiones obtenidas justo antes de renderizar.");
+          } else {
+              return; // Aún sin dimensiones válidas
+          }
+      } else {
+          return; // No se puede obtener dimensiones
+      }
+  }
+  // 3. Debe haber datos listos para el tipo de gráfico seleccionado
+  let dataToRender = currentViewData.value; // Prioriza la vista actual (historial/enfoque)
+  if (!dataToRender) { // Si no hay vista actual, usa los datos base según el tipo
+      if (['horizontal', 'vertical', 'hourglass'].includes(graphType.value)) {
+          dataToRender = treeRootData.value;
+      } else { // 'force' y 'radial' (vista completa inicial)
+          dataToRender = forceGraphData.value;
+      }
+  }
+  if (!dataToRender) {
+      console.log("No hay datos listos para renderizar (dataToRender es null).");
+      clearTree(); // Limpia por si acaso había algo antes
+      // Podríamos mostrar un mensaje en el contenedor
+      // d3.select(treeContainer.value).append('p').text('Cargue un archivo GEDCOM para comenzar.');
+      return;
+  }
+
+  // --- Limpieza y Preparación ---
+  clearTree(); // Limpia el gráfico anterior y detiene simulaciones
+  console.log(`Renderizando tipo: ${graphType.value} con ${dataToRender.nodes?.length || 'N/A'} nodos / ${dataToRender.links?.length || 'N/A'} enlaces.`);
+  error.value = null; // Limpia errores previos de renderizado
+
+  // --- Renderizado específico por tipo ---
   try {
     const width = currentWidth.value;
     const height = currentHeight.value;
+    const nodeFocusHandler = handleNodeFocus; // Handler para clic/enfocar (usado en radial)
+    const nodeModalHandler = handleNodeModal; // Handler para doble-clic/modal (usado en todos)
 
-    // Pass BOTH handlers to all graph types for simplicity,
-    // let the specific renderer decide which one to use on click.
-    // EdgeBundling uses both, others might just use handleNodeModal.
-    const nodeFocusHandler = handleNodeFocus;
-    const nodeModalHandler = handleNodeModal;
+    let hierarchyData; // Para datos procesados por d3.hierarchy
 
-    if (graphType.value === 'force') {
-        if (!dataToRender.nodes || !dataToRender.nodes.length) throw new Error('No hay nodos para el grafo de fuerza.');
-        simulation.value = renderForceGraph(dataToRender, treeContainer.value, width, height, nodeModalHandler); // Force graph typically just opens modal
-    } else if (graphType.value === 'horizontal') {
-        renderTreeHorizontal(dataToRender, treeContainer.value, width, height, nodeModalHandler); // Tree typically just opens modal
-    } else if (graphType.value === 'vertical') {
-        renderResplandorRadial(dataToRender, treeContainer.value, width, height, nodeModalHandler); // Sunburst typically just opens modal
-    } else if (graphType.value === 'radial') {
-        // Pass both handlers to Agrupamiento Relacional
+    // Selecciona la función de renderizado adecuada y prepara los datos si es necesario
+    switch (graphType.value) {
+      case 'force':
+        if (!dataToRender.nodes || dataToRender.nodes.length === 0) throw new Error('No hay nodos para el grafo de fuerza.');
+        // Inicia la simulación de fuerza
+        simulation.value = renderForceGraph(dataToRender, treeContainer.value, width, height, nodeModalHandler);
+        break;
+
+      case 'horizontal':
+      case 'vertical': // Sunburst
+      case 'hourglass':
+        // Estos tipos requieren datos jerárquicos
+        if (!dataToRender) throw new Error(`No hay datos jerárquicos (treeRootData) para el gráfico ${graphType.value}.`);
+        try {
+            hierarchyData = d3.hierarchy(dataToRender, d => d.children); // Crea la jerarquía D3
+            // Para Sunburst, calcula la suma (usualmente para tamaño de arcos)
+            if (graphType.value === 'vertical') {
+                hierarchyData.sum(d => d.value || 1); // Asigna valor 1 si no existe 'value'
+            }
+        } catch (hierarchyError) {
+            console.error("Error al crear la jerarquía D3:", hierarchyError, dataToRender);
+            throw new Error(`Error procesando datos para ${graphType.value}: ${hierarchyError.message}`);
+        }
+        // Llama a la función de renderizado correspondiente
+        if (graphType.value === 'horizontal') renderTreeHorizontal(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        if (graphType.value === 'vertical') renderResplandorRadial(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        if (graphType.value === 'hourglass') renderHourglassGraph(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        break;
+
+      case 'radial': // Edge Bundling
+        // Este tipo espera {nodes, links} directamente
+        if (!dataToRender.nodes || !dataToRender.links) throw new Error('Datos inválidos (se esperan nodos y enlaces) para el gráfico radial.');
+        if (dataToRender.nodes.length === 0) console.warn("Renderizando gráfico radial sin nodos."); // Puede ser válido si solo hay enlaces?
+        // Llama a la función de renderizado radial
         renderAgrupamientoRelacional(dataToRender, treeContainer.value, width, height, nodeFocusHandler, nodeModalHandler);
-    } else if (graphType.value === 'hourglass') {
-         renderHourglassGraph(dataToRender, treeContainer.value, width, height, nodeModalHandler); // Hourglass typically just opens modal
+        break;
+
+      default:
+        throw new Error(`Tipo de gráfico desconocido: ${graphType.value}`);
+    }
+    console.log(`Gráfico ${graphType.value} renderizado exitosamente.`);
+
+    // --- Integrar D3 Zoom ---
+    const svg = d3.select(treeContainer.value).select('svg');
+    if (!svg.empty()) {
+      d3Zoom = d3.zoom()
+        .scaleExtent([0.2, 5])
+        .on('zoom', (event) => {
+          svg.select('g').attr('transform', event.transform);
+        });
+      svg.call(d3Zoom);
     }
 
-  } catch (err) {
-      console.error("Error rendering graph:", err);
-      error.value = err.message || 'Error al dibujar el gráfico.';
-      clearTree(); // Clear potentially broken SVG
+  } catch (renderErr) {
+    console.error(`Error renderizando gráfico (${graphType.value}):`, renderErr);
+    error.value = `Error al dibujar el gráfico ${graphType.value}: ${renderErr.message}`;
+    clearTree(); // Limpia el SVG por si quedó en un estado inconsistente
+    // Opcional: Mostrar mensaje de error en el contenedor SVG
+    d3.select(treeContainer.value)
+        .append('text')
+        .attr('x', 10)
+        .attr('y', 20)
+        .attr('fill', 'red')
+        .text(`Error: ${error.value}`);
   }
 };
 
+// --- Métodos de pantalla completa y zoom ---
+const toggleFullscreen = () => {
+  const card = treeContainerCard.value?.$el;
+  if (!card) return;
+  if (!isFullscreen.value) {
+    if (card.requestFullscreen) card.requestFullscreen();
+    else if (card.webkitRequestFullscreen) card.webkitRequestFullscreen();
+    else if (card.msRequestFullscreen) card.msRequestFullscreen();
+    isFullscreen.value = true;
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    else if (document.msExitFullscreen) document.msExitFullscreen();
+    isFullscreen.value = false;
+  }
+};
+
+const zoomIn = () => {
+  if (d3Zoom && treeContainer.value) {
+    const svg = d3.select(treeContainer.value).select('svg');
+    svg.transition().duration(200).call(d3Zoom.scaleBy, 1.2);
+  }
+};
+const zoomOut = () => {
+  if (d3Zoom && treeContainer.value) {
+    const svg = d3.select(treeContainer.value).select('svg');
+    svg.transition().duration(200).call(d3Zoom.scaleBy, 0.8);
+  }
+};
+
+// Maneja el evento de cambio de pantalla completa
+const handleFullscreenChange = () => {
+  const fsElement = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+  isFullscreen.value = !!fsElement;
+  // Forzar redimensionado y renderizado al entrar/salir de pantalla completa
+  nextTick(() => {
+    if (resizeObserver.value) resizeObserver.value.disconnect();
+    setupResizeObserver();
+  });
+};
 
 // --- Watchers ---
+
+// Observa cambios en el tipo de gráfico seleccionado por el usuario
 watch(graphType, (newType, oldType) => {
-  console.log(`Graph type changed from ${oldType} to ${newType}`);
+  console.log(`Tipo de gráfico cambiado de ${oldType} a ${newType}`);
+  // Solo re-renderiza si ya se cargaron datos GEDCOM
   if (gedcomData.value) {
-    // Reset view to full data when changing graph type? Or keep focus?
-    // Let's reset to full view for simplicity.
-    viewHistory.value = []; // Clear history
-    selectedFamily.value = null; // Clear family selection
-    currentViewData.value = ['horizontal', 'vertical', 'radial', 'hourglass'].includes(newType)
-        ? treeRootData.value
-        : forceGraphData.value;
+    // Resetea la vista a los datos completos al cambiar tipo
+    viewHistory.value = []; // Limpia historial radial
+    selectedFamily.value = null; // Limpia selección de familia radial
+
+    // CORRECCIÓN CLAVE: Asigna los datos BASE correctos según el nuevo tipo
+    if (['horizontal', 'vertical', 'hourglass'].includes(newType)) {
+        currentViewData.value = treeRootData.value; // Jerárquico
+    } else { // 'force' y 'radial'
+        currentViewData.value = forceGraphData.value; // {nodes, links}
+    }
+    console.log("Datos base asignados para el nuevo tipo:", currentViewData.value ? 'OK' : 'NULL');
+
+    // Espera al siguiente tick y re-renderiza
     nextTick(renderGraph);
   }
 });
 
+// Observa cambios en el tema (oscuro/claro) para re-renderizar si es necesario
+// Útil si los gráficos usan variables CSS (--v-theme-on-surface, etc.) para colores
 watch(() => theme.global.current.value.dark, () => {
-    if (gedcomData.value) {
-        // Re-render needed to apply theme colors used in graphTypes/*.js
-        nextTick(renderGraph);
-    }
+  console.log("Cambio de tema detectado.");
+  if (gedcomData.value && treeContainer.value && d3.select(treeContainer.value).select('svg').node()) {
+    // Solo re-renderiza si hay datos y un gráfico existente
+    console.log("Re-renderizando gráfico por cambio de tema.");
+    nextTick(renderGraph);
+  }
 });
 
 // --- Lifecycle Hooks ---
+
 onMounted(() => {
-  // Setup observer when component mounts, but rendering waits for file load/dimensions
-  // setupResizeObserver(); // Moved to after file load
+  // La configuración del ResizeObserver se llama DESPUÉS de cargar el archivo (onFileChange)
+  // para asegurar que el elemento v-card (treeContainerCard) exista en el DOM.
+  console.log("Componente montado.");
+  // Podríamos intentar configurar el observer aquí si treeContainerCard ya existe,
+  // pero es más seguro hacerlo después de la carga del archivo.
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('msfullscreenchange', handleFullscreenChange);
 });
 
-// Clean up observer when component unmounts
+// Limpia el observador al desmontar el componente para evitar fugas de memoria
 onBeforeUnmount(() => {
-    if (resizeObserver.value) {
-        resizeObserver.value.disconnect();
-        console.log("ResizeObserver disconnected.");
-    }
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect(); // Deja de observar
+    resizeObserver.value = null; // Libera la referencia
+    console.log("ResizeObserver desconectado.");
+  }
+  // También es buena idea limpiar la simulación si existe
+  if (simulation.value) {
+      simulation.value.stop();
+      simulation.value = null;
+  }
+  console.log("Componente a punto de desmontarse.");
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.removeEventListener('msfullscreenchange', handleFullscreenChange);
 });
 
 </script>
 
 <style>
-/* Add styles for the graph container if needed, e.g., background */
+/* Estilos básicos para el contenedor y SVG */
 .h-100 {
   height: 100%;
 }
 .w-100 {
   width: 100%;
 }
-/* Ensure SVG elements inherit font styles */
-svg text {
-  font-family: sans-serif;
-  font-size: 10px;
-  /* Fill color is set dynamically in JS based on theme */
+/* Contenedor del gráfico */
+#treeContainer {
+    position: relative; /* Para posible tooltip absoluto */
+    background-color: var(--v-theme-surface); /* Fondo basado en tema */
+    overflow: hidden; /* Evita barras de scroll si SVG se desborda */
+    transition: background 0.3s; /* Mejor contraste para modo oscuro */
 }
 
-/* Style links */
+/* Asegura que el SVG ocupe el espacio y sea responsive */
+#treeContainer svg {
+    display: block; /* Elimina espacio extra debajo del SVG */
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    font-family: sans-serif; /* Fuente base para texto SVG */
+    font-size: 10px; /* Tamaño base, puede ser sobrescrito */
+    user-select: none; /* Evita selección de texto accidental en el gráfico */
+    background: transparent; /* Fondo SVG transparente para heredar el fondo del contenedor */
+}
+
+/* Estilos generales para enlaces (pueden ser sobrescritos por JS) */
 svg .link {
   fill: none;
-  stroke: #555;
-  stroke-opacity: 0.4;
+  stroke: var(--v-theme-on-surface); /* Usa color del tema */
+  stroke-opacity: 0.3; /* Más sutil por defecto */
   stroke-width: 1.5px;
+  transition: stroke-opacity 0.2s ease-in-out, stroke-width 0.2s ease-in-out; /* Transición suave */
 }
 
-/* Style nodes */
+/* Estilos generales para círculos de nodos (pueden ser sobrescritos por JS) */
 svg .node circle {
-  /* Fill and stroke are set dynamically in JS */
-  stroke-width: 1.5px;
-  cursor: pointer;
+  /* fill y stroke se suelen poner dinámicamente en JS */
+  stroke: var(--v-theme-on-surface);
+  stroke-width: 1px;
+  stroke-opacity: 0.7;
+  cursor: pointer; /* Indica interactividad */
+  fill: var(--v-theme-surface); /* Mejor visibilidad en modo oscuro */
+  transition: fill 0.2s;
 }
 
-/* Style node text */
+/* Estilos generales para texto de nodos (pueden ser sobrescritos por JS) */
 svg .node text {
-  cursor: pointer;
-  /* Fill color is set dynamically */
+  cursor: pointer; /* Indica interactividad */
+  fill: var(--v-theme-on-surface) !important;
+  paint-order: stroke; /* Dibuja borde primero para legibilidad */
+  stroke: var(--v-theme-surface); /* Borde del color de fondo */
+  stroke-width: 3px; /* Ancho del borde */
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  transition: fill-opacity 0.2s ease-in-out, font-weight 0.2s ease-in-out; /* Transición suave */
 }
 
-/* Ensure dialog content is readable */
+/* Modal legible en modo oscuro */
+.v-dialog .v-card {
+  background: var(--v-theme-surface) !important;
+  color: var(--v-theme-on-surface) !important;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.32);
+}
+
+/* Asegura legibilidad del contenido del diálogo modal */
 .v-dialog .v-card-text {
   color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
 }
 .v-dialog .v-list-item-title strong {
  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+}
+.v-dialog .v-list-item-subtitle {
+    font-size: 0.8em; /* Más pequeño para fechas/lugares */
+    /* margin-left: 8px; */ /* Quitado para usar layout de v-list */
+    color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+    line-height: 1.3;
+    margin-top: 2px;
+}
+/* Estilo específico para los eventos dentro del subtítulo */
+.v-dialog .v-list-item-subtitle div {
+    margin-left: 8px; /* Indenta cada evento */
+}
+
+/* Footer adaptativo */
+#main-footer {
+  background: var(--v-theme-surface);
+  color: var(--v-theme-on-surface);
+  border-top: 1px solid var(--v-theme-outline);
+  transition: background 0.3s, color 0.3s;
+}
+#main-footer a {
+  color: var(--v-theme-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+/* Ajustes para inputs y cards en modo oscuro */
+.v-card, .v-file-input, .v-text-field, .v-autocomplete, .v-list, .v-dialog {
+  background-color: var(--v-theme-surface) !important;
+  color: var(--v-theme-on-surface) !important;
+  transition: background 0.3s, color 0.3s;
+}
+
+.v-btn {
+  transition: background 0.2s, color 0.2s;
+}
+
+/* Mejor contraste para alerts en modo oscuro */
+.v-alert {
+  background: var(--v-theme-surface) !important;
+  color: var(--v-theme-error) !important;
+  border: 1px solid var(--v-theme-error);
+}
+
+/* Scrollbar visible en modo oscuro */
+#treeContainer ::-webkit-scrollbar {
+  width: 8px;
+  background: var(--v-theme-surface);
+}
+#treeContainer ::-webkit-scrollbar-thumb {
+  background: var(--v-theme-outline);
+  border-radius: 4px;
 }
 
 </style>

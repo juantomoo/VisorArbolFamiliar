@@ -55,6 +55,7 @@ export function renderForceGraph({ nodes, links }, container, width, height, onN
     .attr('font-size', 12)
     .attr('dx', 10)
     .attr('dy', 4)
+    .attr('fill', 'var(--v-theme-on-surface)')
     .text(d => d.name);
   const simulation = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(links).id(d => d.id).distance(d => d.type === 'spouse' ? 40 : 80))
