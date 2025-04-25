@@ -60,7 +60,7 @@ export function renderTreeHorizontal(hierarchyRoot, container, width, height, on
       .attr('preserveAspectRatio', 'xMidYMid meet') // Centra y escala
       .style('font', '10px sans-serif')
       // CORRECCIÓN: Quitado overflow: visible para contener el pan
-      .style('background-color', 'var(--v-theme-background, #f5f5f5)'); // Fondo para ver límites
+      .style('background-color', 'var(--graph-background)'); // Fondo para ver límites
 
   // Grupo principal para aplicar márgenes y transformaciones de zoom/pan
   // CORRECCIÓN: Centrado vertical inicial más robusto
@@ -90,7 +90,7 @@ export function renderTreeHorizontal(hierarchyRoot, container, width, height, on
       .attr('class', 'links')
       .attr('fill', 'none')
       // CORRECCIÓN DEBUG: Usar color teal y opacidad 1 temporalmente
-      .attr('stroke', 'teal') // <-- DEBUG: Color teal brillante
+      .attr('stroke', 'var(--graph-link-default)') // <-- DEBUG: Color teal brillante
       .attr('stroke-opacity', 0.6) // <-- DEBUG: Totalmente opaco
       .attr('stroke-width', 1.5);
 
@@ -156,8 +156,8 @@ export function renderTreeHorizontal(hierarchyRoot, container, width, height, on
 
   // Dibuja un círculo para cada nodo
   nodeSelection.append('circle')
-      .attr('fill', d => d.children ? 'var(--v-theme-primary, #6200ea)' : 'var(--v-theme-secondary, #999)')
-      .attr('stroke', 'var(--v-theme-surface, white)')
+      .attr('fill', d => d.children ? 'var(--graph-primary-node)' : 'var(--graph-secondary-node)')
+      .attr('stroke', 'var(--graph-node-stroke)')
       .attr('r', 5.5) // Ligeramente más grande
       .style('cursor', 'pointer')
       .on('click', (event, d) => {
@@ -171,13 +171,13 @@ export function renderTreeHorizontal(hierarchyRoot, container, width, height, on
 
   // Añade texto (nombre) a cada nodo
   nodeSelection.append('text')
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       .attr('dy', '0.31em')
       .attr('x', d => d.children ? -9 : 9) // Más separación del círculo
       .attr('text-anchor', d => d.children ? 'end' : 'start')
       .text(d => d.data.name || d.data.id || '??') // Texto de fallback
       .style('paint-order', 'stroke')
-      .attr('stroke', 'var(--v-theme-surface)')
+      .attr('stroke', 'var(--graph-node-stroke)')
       .attr('stroke-width', 3)
       .style('pointer-events', 'none'); // Evita que el texto interfiera con clic en círculo
 

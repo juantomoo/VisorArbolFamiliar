@@ -8,6 +8,52 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Variables para tema claro (default) */
+  --graph-background: #f8f8f8;
+  --graph-text: #333333;
+  --graph-node-stroke: #ffffff;
+  --graph-link-default: #999999;
+  --graph-link-highlight: #ff7700;
+  
+  /* Colores específicos para distintos tipos de relaciones */
+  --graph-parent-link: #ff7f0e;
+  --graph-child-link: #2ca02c;
+  --graph-spouse-link: #1f77b4;
+  --graph-other-link: #9467bd;
+  
+  /* Nodos */
+  --graph-primary-node: #6200ea;
+  --graph-secondary-node: #03dac6;
+  --graph-node-highlight: #ff4081;
+  
+  /* Fondo y bordes */
+  --graph-container-border: rgba(0, 0, 0, 0.12);
+  --graph-tooltip-bg: rgba(255, 255, 255, 0.95);
+}
+
+/* Variables para tema oscuro */
+.v-theme--dark {
+  --graph-background: #121212;
+  --graph-text: #e0e0e0;
+  --graph-node-stroke: #333333;
+  --graph-link-default: #666666;
+  --graph-link-highlight: #ff9800;
+  
+  /* Colores específicos para distintos tipos de relaciones */
+  --graph-parent-link: #ffb74d; 
+  --graph-child-link: #81c784;
+  --graph-spouse-link: #64b5f6;
+  --graph-other-link: #ce93d8;
+  
+  /* Nodos */
+  --graph-primary-node: #bb86fc;
+  --graph-secondary-node: #03dac6;
+  --graph-node-highlight: #ff7597;
+  
+  /* Fondo y bordes */
+  --graph-container-border: rgba(255, 255, 255, 0.12);
+  --graph-tooltip-bg: rgba(40, 40, 40, 0.95);
 }
 
 a {
@@ -56,7 +102,7 @@ button:focus-visible {
 }
 
 .v-overlay__content {
-  background-color: #f9f9f9;
+  background-color: var(--graph-background);
 }
 
 #app {

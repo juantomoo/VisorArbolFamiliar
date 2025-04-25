@@ -3,7 +3,7 @@ import * as d3 from 'd3';
 
 /**
  * Renderiza un gráfico Zoomable Sunburst (Resplandor Radial).
- * Espera datos ya procesados por d3.hierarchy().
+ * Espera datos ya procesados por d3.hierarchy().sum().sort().
  *
  * @param {object} hierarchyRoot - El nodo raíz resultante de d3.hierarchy().sum().sort().
  * @param {HTMLElement} container - Elemento contenedor del SVG.
@@ -70,7 +70,8 @@ export function renderResplandorRadial(hierarchyRoot, container, width, height, 
       // Centra el viewBox en [0,0]
       .attr('viewBox', [-width / 2, -height / 2, width, height])
       .attr('preserveAspectRatio', 'xMidYMid meet')
-      .style('font', '10px sans-serif');
+      .style('font', '10px sans-serif')
+      .style('background-color', 'var(--graph-background)');
 
   // Grupo principal para los arcos
   const pathGroup = svg.append('g')
@@ -93,6 +94,8 @@ export function renderResplandorRadial(hierarchyRoot, container, width, height, 
       .attr('fill-opacity', d => arcVisible(d.current) ? (d.children ? 0.7 : 0.5) : 0) // Más opaco si tiene hijos
       // Desactiva eventos de puntero si el arco no es visible (optimización)
       .attr('pointer-events', d => arcVisible(d.current) ? 'auto' : 'none')
+      .attr('stroke', 'var(--graph-node-stroke)')
+      .attr('stroke-width', 0.5)
       // Dibuja el arco usando el generador y el estado 'current'
       .attr('d', d => arcGenerator(d.current));
 
@@ -158,7 +161,7 @@ export function renderResplandorRadial(hierarchyRoot, container, width, height, 
     .data(rootNode.descendants().slice(1)) // Datos para las etiquetas (sin la raíz)
     .join('text')
       .attr('dy', '0.35em') // Ajuste vertical fino
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       // Opacidad inicial basada en visibilidad
       .attr('fill-opacity', d => +labelVisible(d.current)) // Convierte booleano a 0 o 1
       // Transformación inicial para posicionar y rotar la etiqueta
@@ -180,7 +183,7 @@ export function renderResplandorRadial(hierarchyRoot, container, width, height, 
   const parentCircle = svg.append('circle')
     .datum(rootNode) // Asocia el nodo raíz al círculo
     .attr('r', baseRadius) // Radio base (cubre el primer nivel)
-    .attr('fill', 'var(--v-theme-primary, #6200ea)') // Color primario del tema (con fallback)
+    .attr('fill', 'var(--graph-primary-node)') // Color primario del tema
     .attr('fill-opacity', 0.75) // Semi-transparente
     .style('cursor', 'pointer')
     .attr('pointer-events', 'all') // Asegura que sea clickeable
@@ -204,7 +207,7 @@ export function renderResplandorRadial(hierarchyRoot, container, width, height, 
     .attr("x", -width / 2 + 15) // Posición esquina superior izquierda
     .attr("y", -height / 2 + 25)
     .attr("font-size", "11px")
-    .attr("fill", "var(--v-theme-on-surface)")
+    .attr("fill", "var(--graph-text)")
     .attr("fill-opacity", 0.7)
     .text("Clic: Zoom | Ctrl+Clic / Pulsación larga: Detalles");
 

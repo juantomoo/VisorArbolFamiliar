@@ -3,7 +3,15 @@
     <v-app-bar app>
       <v-app-bar-title>Árbol Genealógico por HISQUE Estudio</v-app-bar-title>
       <v-spacer></v-spacer>
-      <v-btn :icon="darkMode ? 'mdi-weather-night' : 'mdi-weather-sunny'" @click="toggleDarkMode"></v-btn>
+      <v-switch
+        v-model="darkMode"
+        hide-details
+        inset
+        color="primary"
+        :prepend-icon="darkMode ? 'mdi-weather-night' : 'mdi-weather-sunny'"
+        density="compact"
+        @change="toggleDarkMode"
+      ></v-switch>
     </v-app-bar>
     <v-main>
       <GedcomTree />
@@ -17,16 +25,32 @@ import GedcomTree from './components/GedcomTree.vue'; // Import the component
 import { useTheme } from 'vuetify'
 
 const theme = useTheme();
-const darkMode = ref(false); // Or read from localStorage/preference
+const darkMode = ref(false); // O guarda el estado desde localStorage
 
 const toggleDarkMode = () => {
-  darkMode.value = !darkMode.value;
+  theme.global.name.value = darkMode.value ? 'dark' : 'light';
+  // Opcional: guardar preferencia en localStorage
+  localStorage.setItem('darkMode', darkMode.value);
+};
+
+// Inicializar tema basado en preferencia guardada o preferencia del sistema
+const initTheme = () => {
+  // Primero intenta obtener la preferencia guardada
+  const savedMode = localStorage.getItem('darkMode');
+  
+  if (savedMode !== null) {
+    darkMode.value = savedMode === 'true';
+  } else {
+    // Si no hay preferencia guardada, usa la preferencia del sistema
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    darkMode.value = prefersDark;
+  }
+  
   theme.global.name.value = darkMode.value ? 'dark' : 'light';
 };
 
-// Initialize theme based on darkMode ref
-theme.global.name.value = darkMode.value ? 'dark' : 'light';
-
+// Ejecutar al montar el componente
+initTheme();
 </script>
 
 <style>

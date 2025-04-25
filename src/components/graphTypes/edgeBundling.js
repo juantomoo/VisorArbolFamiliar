@@ -76,18 +76,13 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
       };
   }).filter(link => link !== null); // Filtra los enlaces nulos que resultaron de nodos no encontrados
 
-  // Colores para tipos de enlace (ajusta según tu paleta)
-  const colorParent = '#ff7f0e'; // Naranja
-  const colorChild = '#2ca02c'; // Verde
-  const colorSpouse = '#1f77b4'; // Azul
-  const colorOther = '#9467bd'; // Púrpura (para otros tipos o por defecto)
-
+  // Colores para tipos de enlace (usando variables CSS)
   function getColorByType(type) {
     switch (type) {
-      case 'parent': return colorParent;
-      case 'child': return colorChild;
-      case 'spouse': return colorSpouse;
-      default: return colorOther;
+      case 'parent': return 'var(--graph-parent-link)';
+      case 'child': return 'var(--graph-child-link)';
+      case 'spouse': return 'var(--graph-spouse-link)';
+      default: return 'var(--graph-other-link)';
     }
   }
 
@@ -113,7 +108,8 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
       // Centrado en [0,0] usando (-width/2, -height/2) como esquina superior izquierda
       .attr('viewBox', [-width / 2, -height / 2, width, height])
       .attr('preserveAspectRatio', 'xMidYMid meet') // Centra y escala el contenido
-      .style('font', '10px sans-serif'); // Tamaño de fuente base más pequeño
+      .style('font', '10px sans-serif') // Tamaño de fuente base más pequeño
+      .style('background-color', 'var(--graph-background)');
 
   const g = svg.append('g'); // Grupo para aplicar transformaciones de zoom/pan
 
@@ -154,23 +150,38 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
 
   // Añadir texto a cada grupo de nodo
   const nodeTexts = nodeGroups.append('text')
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       .attr('dy', '0.31em')
       .attr('x', d => d.x < Math.PI ? 8 : -8)
       .attr('text-anchor', d => d.x < Math.PI ? 'start' : 'end')
       .attr('transform', d => d.x >= Math.PI ? 'rotate(180)' : null)
       .text(d => d.name || d.id)
       .style('paint-order', 'stroke')
-      .attr('stroke', 'var(--v-theme-surface)')
+      .attr('stroke', 'var(--graph-node-stroke)')
       .attr('stroke-width', 3)
-      .style('cursor', 'pointer')
-      .on('mouseover', handleMouseOver)
-      .on('mouseout', handleMouseOut)
+      .style('cursor', 'pointer') // Indica interactividad
+      .on('mouseover', handleMouseOver) // Mantiene el resaltado
+      .on('mouseout', handleMouseOut)  // Mantiene el resaltado
       .on('click', (event, d) => {
-          if (event.detail === 2 && onNodeModal) onNodeModal(d);
-          else if (onNodeFocus) onNodeFocus(d);
+          // Detiene la propagación para que el zoom no interprete esto como un inicio de pan/drag
+          event.stopPropagation();
+          // Llama a los manejadores originales pasando d.data
+          if (event.detail === 2 && onNodeModal) {
+              onNodeModal(d.data); // Usa d.data para obtener el nodo original
+          } else if (onNodeFocus) {
+              onNodeFocus(d.data); // Usa d.data para obtener el nodo original
+          }
       })
-      .each(function(d) { d.textElement = this; });
+      // Previene explícitamente el inicio del arrastre por defecto del navegador en el texto
+      .on('mousedown', (event) => {
+          event.preventDefault(); // Evita que el navegador inicie un arrastre de texto
+          event.stopPropagation(); // Detiene la propagación al SVG para evitar conflictos con zoom
+      })
+      .on('touchstart', (event) => {
+          event.preventDefault(); // Evita el comportamiento táctil por defecto (scroll, etc.)
+          event.stopPropagation(); // Detiene la propagación al SVG
+      }, { passive: false }) // Necesario para preventDefault en touchstart
+      .each(function(d) { d.textElement = this; }); // Guarda referencia al elemento
 
   // Añadir tooltip básico (título nativo del navegador)
   nodeTexts.append('title').text(d => `${d.name || d.id}`);
@@ -192,6 +203,7 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
         d3.select(l.pathElement)
             .attr('stroke-opacity', 0.7) // Más opaco
             .attr('stroke-width', 2.5) // Más grueso
+            .attr('stroke', 'var(--graph-link-highlight)') // Color destacado
             .raise(); // Lo trae al frente visualmente
         // Añade los nodos conectados al Set
         connectedNodes.add(l.source);
@@ -213,10 +225,12 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
 
   // Restaura la apariencia normal de todos los elementos
   function handleMouseOut(event, d) {
-    linkPaths.attr('stroke-opacity', 0.2).attr('stroke-width', 1.5); // Opacidad y grosor por defecto
+    linkPaths
+      .attr('stroke-opacity', 0.2)
+      .attr('stroke-width', 1.5)
+      .attr('stroke', l => getColorByType(l.type)); // Restaura color original
     nodeTexts.attr('fill-opacity', 1).attr('font-weight', null); // Opacidad y peso normal
   }
-
 
   // --- Leyenda ---
   const legendGroup = svg.append('g')
@@ -229,23 +243,23 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
       .attr('y', 0)
       .attr('font-size', '14px')
       .attr('font-weight', 'bold')
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       .text(focusName); // Muestra nombre de enfoque o título general
 
   legendGroup.append('text')
       .attr('class', 'legend-subtitle')
       .attr('y', 20)
       .attr('font-size', '11px')
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       .attr('fill-opacity', 0.8)
       .text('Clic: Enfocar | Doble Clic: Detalles'); // Instrucciones básicas
 
   // Elementos de la leyenda para tipos de enlace
   const legendItems = [
-      { label: 'Padre/Madre', color: colorParent, type: 'parent' },
-      { label: 'Hijo/Hija', color: colorChild, type: 'child' },
-      { label: 'Cónyuge', color: colorSpouse, type: 'spouse' },
-      { label: 'Otro', color: colorOther, type: 'other' }
+      { label: 'Padre/Madre', color: 'var(--graph-parent-link)', type: 'parent' },
+      { label: 'Hijo/Hija', color: 'var(--graph-child-link)', type: 'child' },
+      { label: 'Cónyuge', color: 'var(--graph-spouse-link)', type: 'spouse' },
+      { label: 'Otro', color: 'var(--graph-other-link)', type: 'other' }
   ];
 
   // Crea un grupo por cada item de la leyenda
@@ -267,11 +281,6 @@ export function renderAgrupamientoRelacional(graphData, container, width, height
       .attr('x', 25) // Posición a la derecha de la línea
       .attr('y', 4) // Alineación vertical con la línea
       .attr('font-size', '10px')
-      .attr('fill', 'var(--v-theme-on-surface)')
+      .attr('fill', 'var(--graph-text)')
       .text(d => d.label); // Texto del tipo de enlace
-
-  // CORRECCIÓN: ResizeObserver eliminado de aquí. Se maneja en Vue.
-
-  // Opcional: Devolver alguna referencia si es necesario fuera de esta función
-  // return { svg: svg.node(), nodes, links };
 }

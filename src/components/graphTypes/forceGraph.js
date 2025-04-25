@@ -10,25 +10,34 @@ export function renderForceGraph({ nodes, links }, container, width, height, onN
     .append('svg')
     .attr('width', '100%')
     .attr('height', height)
+    .style('background-color', 'var(--graph-background)')
     .call(d3.zoom().on('zoom', (event) => {
       g.attr('transform', event.transform);
     }));
   const g = svg.append('g');
   const link = g.append('g')
-    .attr('stroke', '#999')
+    .attr('stroke', 'var(--graph-link-default)')
     .attr('stroke-opacity', 0.6)
     .selectAll('line')
     .data(links)
     .join('line')
-    .attr('stroke-width', d => d.type === 'spouse' ? 2 : 1);
+    .attr('stroke-width', d => d.type === 'spouse' ? 2 : 1)
+    .attr('stroke', d => {
+      switch(d.type) {
+        case 'spouse': return 'var(--graph-spouse-link)';
+        case 'parent': return 'var(--graph-parent-link)';
+        case 'child': return 'var(--graph-child-link)';
+        default: return 'var(--graph-other-link)';
+      }
+    });
   const node = g.append('g')
-    .attr('stroke', '#fff')
+    .attr('stroke', 'var(--graph-node-stroke)')
     .attr('stroke-width', 1.5)
     .selectAll('circle')
     .data(nodes)
     .join('circle')
     .attr('r', 7)
-    .attr('fill', d => d.generation >= 0 ? d3.interpolateRainbow(genColor(d.generation)) : '#ccc')
+    .attr('fill', d => d.generation >= 0 ? d3.interpolateRainbow(genColor(d.generation)) : 'var(--graph-secondary-node)')
     .call(d3.drag()
       .on('start', (event, d) => {
         if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -55,7 +64,7 @@ export function renderForceGraph({ nodes, links }, container, width, height, onN
     .attr('font-size', 12)
     .attr('dx', 10)
     .attr('dy', 4)
-    .attr('fill', 'var(--v-theme-on-surface)')
+    .attr('fill', 'var(--graph-text)')
     .text(d => d.name);
   const simulation = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(links).id(d => d.id).distance(d => d.type === 'spouse' ? 40 : 80))
