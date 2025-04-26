@@ -30,10 +30,7 @@
         <v-btn icon color="primary" size="large" @click="showPersonSelector = !showPersonSelector" aria-label="Seleccionar persona">
           <v-icon>mdi-account</v-icon>
         </v-btn>
-        <v-menu v-model="showPersonSelector" :close-on-content-click="false" location="top right" offset="8">
-          <template #activator="{ props }">
-            <!-- El activador es el botón, ya está arriba -->
-          </template>
+        <div v-if="showPersonSelector" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
           <v-autocomplete
             v-model="footerSelectedId"
             :items="footerPeople"
@@ -44,13 +41,12 @@
             density="comfortable"
             autofocus
             hide-details
-            @change="onFooterPersonChange"
+            @update:model-value="onFooterPersonChange"
             style="min-width:220px;"
             :menu-props="{ maxHeight: '300px' }"
-            clearable
-            return-object="false"
+            :return-object="false"
           />
-        </v-menu>
+        </div>
         <v-btn icon color="primary" size="large" @click="onFooterZoomIn" aria-label="Zoom in">
           <v-icon>mdi-magnify-plus-outline</v-icon>
         </v-btn>
@@ -426,6 +422,8 @@ function buildHourglass() {
   }
   nodes.value = n;
   lines.value = l;
+  // --- Nuevo: centrar el árbol al cambiar de persona ---
+  pan.value = { x: svgWidth/2, y: svgHeight/2 };
 }
 
 // Detecta si hay divorcio/separación entre dos personas

@@ -1,17 +1,21 @@
 <template>
-  <header-vue />
-  <router-view />
-  <footer-vue
-    :people="footerPeople"
-    :selected="footerSelected"
-    :showSelector="footerPeople.length > 0"
-    :zoomEnabled="true"
-    :fullscreenEnabled="true"
-    @person-change="onFooterPersonChange"
-    @zoom-in="onFooterZoomIn"
-    @zoom-out="onFooterZoomOut"
-    @fullscreen="onFooterFullscreen"
-  />
+  <v-app>
+    <header-vue />
+    <v-main>
+      <router-view />
+    </v-main>
+    <footer-vue
+      :people="footerPeople"
+      :selected="footerSelected"
+      :showSelector="footerPeople.length > 0"
+      :zoomEnabled="true"
+      :fullscreenEnabled="true"
+      @person-change="onFooterPersonChange"
+      @zoom-in="onFooterZoomIn"
+      @zoom-out="onFooterZoomOut"
+      @fullscreen="onFooterFullscreen"
+    />
+  </v-app>
 </template>
 
 <script setup>
