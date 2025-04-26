@@ -84,6 +84,22 @@
                    </v-autocomplete>
                  </div>
                </v-expand-transition>
+
+               <v-expand-transition>
+                 <div v-if="graphType === 'myHeritage'" class="mt-3">
+                   <v-autocomplete
+                     v-model="selectedPerson"
+                     :items="personOptions"
+                     item-title="name"
+                     item-value="id"
+                     label="Seleccionar persona raíz"
+                     clearable
+                     hide-details
+                     @update:model-value="onPersonSelected"
+                     class="mb-3"
+                   />
+                 </div>
+               </v-expand-transition>
             </v-card>
 
             <v-card ref="treeContainerCard" class="overflow-hidden" style="height: 70vh;">
@@ -201,17 +217,19 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick, onBeforeUnmount, shallowRef } from 'vue';
 import * as parseGedcom from 'parse-gedcom';
+import { useRouter } from 'vue-router';
 // Importa las funciones de renderizado de los diferentes tipos de gráficos
 // Asegúrate de que las rutas sean correctas según tu estructura de proyecto
 import { renderForceGraph } from './graphTypes/forceGraph';
 import { renderTreeHorizontal } from './graphTypes/treeHorizontal';
-import { renderHourglassGraph } from './graphTypes/hourglassGraph';
 import { renderResplandorRadial } from './graphTypes/zoomableSunburst';
 import { renderAgrupamientoRelacional } from './graphTypes/edgeBundling';
+import { renderMyHeritageGraph } from './graphTypes/myHeritageGraph';
 import * as d3 from 'd3';
 import { useTheme } from 'vuetify'
 
 const theme = useTheme();
+const router = useRouter();
 
 // --- State ---
 const gedcomData = ref(null); // Datos GEDCOM parseados
@@ -239,6 +257,20 @@ const individualsMap = shallowRef(new Map()); // Mapa para búsqueda rápida de 
 
 const gedcomFileName = ref("");
 
+// --- Nuevo state para selector de raíz de persona ---
+const selectedPerson = ref(null);
+
+const personOptions = computed(() =>
+  Array.from(individualsMap.value.values())
+    .map(n => ({ id: n.id, name: n.name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+);
+
+function onPersonSelected(id) {
+  selectedPerson.value = id;
+  nextTick(renderGraph);
+}
+
 const onLoadGedcomByName = async () => {
   if (!gedcomFileName.value) return;
   const fileUrl = `/` + gedcomFileName.value + `.ged`;
@@ -257,7 +289,7 @@ const onLoadGedcomByName = async () => {
     individualsMap.value = new Map(forceGraphData.value.nodes.map(n => [n.id, n]));
     treeRootData.value = buildTreeRootData(forceGraphData.value);
     familyGroups.value = buildFamilyGroups(gedcomData.value.children, individualsMap.value);
-    if (["horizontal", "vertical", "hourglass"].includes(graphType.value)) {
+    if (["horizontal", "vertical"].includes(graphType.value)) {
       currentViewData.value = treeRootData.value;
     } else {
       currentViewData.value = forceGraphData.value;
@@ -299,7 +331,7 @@ const graphTypes = [
   { text: 'Horizontal', value: 'horizontal' }, // Árbol horizontal
   { text: 'Resplandor Radial', value: 'vertical' }, // Sunburst (llamado vertical aquí)
   { text: 'Agrupamiento Relacional', value: 'radial' }, // Edge Bundling
-  // { text: 'Hourglass', value: 'hourglass' }, // Gráfico de reloj de arena (deshabilitado temporalmente)
+  { text: 'MyHeritage', value: 'myHeritage' }, // Nuevo tipo de gráfico
 ];
 
 // --- Computed Properties ---
@@ -426,7 +458,7 @@ const onFileChange = (e) => {
       familyGroups.value = buildFamilyGroups(gedcomData.value.children, individualsMap.value); // Construye lista de familias
 
       // Establece los datos iniciales a visualizar según el tipo de gráfico ACTUALMENTE seleccionado
-      if (['horizontal', 'vertical', 'hourglass'].includes(graphType.value)) {
+      if (['horizontal', 'vertical'].includes(graphType.value)) {
           currentViewData.value = treeRootData.value; // Jerárquico para árboles
       } else { // 'force' y 'radial'
           currentViewData.value = forceGraphData.value; // {nodes, links}
@@ -662,65 +694,65 @@ const buildFamilyGroups = (gedcomNodes, individualsMap) => {
 
 // Enfoca la vista radial en una persona y su familia inmediata
 const handleNodeFocus = (personData) => {
-  // Verifica que personData y su ID existan
   if (!personData || !personData.id) {
       console.error("handleNodeFocus: Se recibió personData inválido.");
       return;
   }
-  console.log("Solicitud de enfoque para:", personData.name || personData.id);
-  // Busca a la persona en el mapa principal usando el ID
-  const person = individualsMap.value.get(personData.id);
-  if (!person) {
-    console.error("Persona no encontrada en el mapa:", personData.id);
-    return; // No se puede enfocar si la persona no está en el mapa
+  const personId = personData.id;
+  console.log("Solicitud de enfoque/raíz para:", personData.name || personId);
+
+  // If the current graph is 'radial', perform the family focus logic
+  if (graphType.value === 'radial') {
+      const person = individualsMap.value.get(personId);
+      if (!person) {
+          console.error("Persona no encontrada en el mapa:", personId);
+          return;
+      }
+
+      // Save current state BEFORE changing view for radial history
+      if (currentViewData.value && (!viewHistory.value.length || viewHistory.value[viewHistory.value.length - 1] !== currentViewData.value)) {
+          viewHistory.value.push(currentViewData.value);
+          console.log("Historial radial guardado, tamaño:", viewHistory.value.length);
+      }
+
+      // Gather immediate family for radial view
+      const familyNodeSet = new Set();
+      familyNodeSet.add(person);
+      person._parents?.forEach(pRef => individualsMap.value.has(pRef.id) && familyNodeSet.add(individualsMap.value.get(pRef.id)));
+      person.spouses?.forEach(sRef => individualsMap.value.has(sRef.id) && familyNodeSet.add(individualsMap.value.get(sRef.id)));
+      person.children?.forEach(cRef => individualsMap.value.has(cRef.id) && familyNodeSet.add(individualsMap.value.get(cRef.id)));
+
+      const familyNodes = Array.from(familyNodeSet);
+      const familyNodeIds = new Set(familyNodes.map(n => n.id));
+
+      const familyLinks = [];
+      forceGraphData.value.links.forEach(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          if (familyNodeIds.has(sourceId) && familyNodeIds.has(targetId)) {
+              familyLinks.push({ ...link, source: sourceId, target: targetId });
+          }
+      });
+
+      const familyGraphData = {
+          nodes: familyNodes,
+          links: familyLinks,
+          _isFamilyFocus: true,
+          _focusPersonName: person.name || person.id
+      };
+
+      currentViewData.value = familyGraphData;
+      selectedFamily.value = null;
+      console.log(`Enfocando radial en ${person.name}. Nodos: ${familyNodes.length}, Enlaces: ${familyLinks.length}`);
+      nextTick(renderGraph); // Render radial focus
+
+  } else {
+      // For other graph types, clicking might just open the modal or do nothing specific yet
+      // Or potentially switch to hourglass view? For now, just log.
+      console.log(`Nodo ${personData.name || personId} clickeado en vista ${graphType.value}. Establecido como raíz potencial para Reloj de Arena.`);
+      // Optionally, switch to hourglass view automatically:
+      // graphType.value = 'hourglass'; // This would trigger the watcher and renderGraph
   }
-
-  // Guarda el estado actual ANTES de cambiar la vista, si es diferente al último guardado
-  if (currentViewData.value && (!viewHistory.value.length || viewHistory.value[viewHistory.value.length - 1] !== currentViewData.value)) {
-     viewHistory.value.push(currentViewData.value);
-     console.log("Historial guardado, tamaño:", viewHistory.value.length);
-  }
-
-  // Reúne nodos: la persona, sus padres, sus cónyuges, y sus hijos
-  const familyNodeSet = new Set();
-  familyNodeSet.add(person); // Añade a la persona central
-  // Añade padres (asegúrate de que existan en el mapa)
-  person._parents?.forEach(pRef => individualsMap.value.has(pRef.id) && familyNodeSet.add(individualsMap.value.get(pRef.id)));
-  // Añade cónyuges
-  person.spouses?.forEach(sRef => individualsMap.value.has(sRef.id) && familyNodeSet.add(individualsMap.value.get(sRef.id)));
-  // Añade hijos
-  person.children?.forEach(cRef => individualsMap.value.has(cRef.id) && familyNodeSet.add(individualsMap.value.get(cRef.id)));
-
-  const familyNodes = Array.from(familyNodeSet); // Convierte el Set a Array
-  const familyNodeIds = new Set(familyNodes.map(n => n.id)); // Set de IDs para búsqueda rápida
-
-  // Reúne enlaces que conectan SOLAMENTE a los nodos de este grupo familiar
-  const familyLinks = [];
-  // Itera sobre TODOS los enlaces originales del grafo completo
-  forceGraphData.value.links.forEach(link => {
-    // Obtiene IDs de source y target (pueden ser objetos o strings)
-    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-
-    // Si AMBOS extremos del enlace pertenecen al grupo familiar, incluye el enlace
-    if (familyNodeIds.has(sourceId) && familyNodeIds.has(targetId)) {
-      // Asegura que el enlace use los IDs, no los objetos nodo completos
-      familyLinks.push({ ...link, source: sourceId, target: targetId });
-    }
-  });
-
-  // Crea la nueva estructura de datos para la vista radial enfocada
-  const familyGraphData = {
-    nodes: familyNodes, // Nodos del grupo familiar
-    links: familyLinks, // Enlaces filtrados del grupo familiar
-    _isFamilyFocus: true, // Marca como vista enfocada
-    _focusPersonName: person.name || person.id // Guarda el nombre para posible título
-  };
-
-  currentViewData.value = familyGraphData; // Actualiza los datos a renderizar
-  selectedFamily.value = null; // Limpia selección del dropdown (ya que enfocamos manualmente)
-  console.log(`Enfocando en ${person.name}. Nodos: ${familyNodes.length}, Enlaces: ${familyLinks.length}`);
-  nextTick(renderGraph); // Renderiza la nueva vista enfocada
 };
 
 
@@ -942,89 +974,122 @@ const renderGraph = () => {
   }
   // 3. Debe haber datos listos para el tipo de gráfico seleccionado
   let dataToRender = currentViewData.value; // Prioriza la vista actual (historial/enfoque)
-  if (!dataToRender) { // Si no hay vista actual, usa los datos base según el tipo
-      if (['horizontal', 'vertical', 'hourglass'].includes(graphType.value)) {
+  let requiresHierarchy = ['horizontal', 'vertical']; // Sunburst ('vertical') needs hierarchy
+  let requiresForceData = ['force', 'radial'];
+
+  if (!dataToRender) {
+      if (requiresHierarchy.includes(graphType.value)) {
           dataToRender = treeRootData.value;
-      } else { // 'force' y 'radial' (vista completa inicial)
+      } else if (requiresForceData.includes(graphType.value)) {
           dataToRender = forceGraphData.value;
+      } else {
+          console.log(`No hay datos listos para renderizar tipo ${graphType.value}.`);
+          clearTree();
+          d3.select(treeContainer.value).append('p').text('Cargue un archivo GEDCOM y seleccione un tipo de gráfico.');
+          return;
       }
   }
+
+  // Check data validity again after potential default assignment
   if (!dataToRender) {
-      console.log("No hay datos listos para renderizar (dataToRender es null).");
-      clearTree(); // Limpia por si acaso había algo antes
-      // Podríamos mostrar un mensaje en el contenedor
-      // d3.select(treeContainer.value).append('p').text('Cargue un archivo GEDCOM para comenzar.');
+      console.log(`No hay datos listos para renderizar tipo ${graphType.value}.`);
+      clearTree();
+      d3.select(treeContainer.value).append('p').text('Cargue un archivo GEDCOM y seleccione un tipo de gráfico.');
       return;
   }
 
   // --- Limpieza y Preparación ---
-  clearTree(); // Limpia el gráfico anterior y detiene simulaciones
-  console.log(`Renderizando tipo: ${graphType.value} con ${dataToRender.nodes?.length || 'N/A'} nodos / ${dataToRender.links?.length || 'N/A'} enlaces.`);
-  error.value = null; // Limpia errores previos de renderizado
+  clearTree();
+  console.log(`Renderizando tipo: ${graphType.value}`);
+  error.value = null;
 
   // --- Renderizado específico por tipo ---
   try {
     const width = currentWidth.value;
     const height = currentHeight.value;
-    const nodeFocusHandler = handleNodeFocus; // Handler para clic/enfocar (usado en radial)
-    const nodeModalHandler = handleNodeModal; // Handler para doble-clic/modal (usado en todos)
+    const nodeClickHandler = handleNodeFocus;
+    const nodeModalHandler = handleNodeModal;
+    let hierarchyData;
 
-    let hierarchyData; // Para datos procesados por d3.hierarchy
+    // --- myHeritage: Si hay persona seleccionada, renderiza su árbol ---
+    if (graphType.value === 'myHeritage' && selectedPerson.value) {
+      const person = individualsMap.value.get(selectedPerson.value);
+      if (person) {
+        const hierarchyObj = buildPersonHierarchy(person);
+        if (hierarchyObj) {
+          clearTree();
+          hierarchyData = d3.hierarchy(hierarchyObj, d => d.children);
+          renderMyHeritageGraph(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+          return;
+        }
+      }
+    }
 
-    // Selecciona la función de renderizado adecuada y prepara los datos si es necesario
     switch (graphType.value) {
       case 'force':
-        if (!dataToRender.nodes || dataToRender.nodes.length === 0) throw new Error('No hay nodos para el grafo de fuerza.');
-        // Inicia la simulación de fuerza
+        if (!dataToRender?.nodes || !dataToRender?.links) throw new Error("Datos inválidos para grafo de fuerza.");
         simulation.value = renderForceGraph(dataToRender, treeContainer.value, width, height, nodeModalHandler);
         break;
-
       case 'horizontal':
+        if (!dataToRender) throw new Error("Datos jerárquicos requeridos para árbol horizontal.");
+        // Ensure data is in hierarchy format for tree layouts
+        hierarchyData = d3.hierarchy(dataToRender, d => d.children);
+        renderTreeHorizontal(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        break;
       case 'vertical': // Sunburst
-      case 'hourglass':
-        // Estos tipos requieren datos jerárquicos
-        if (!dataToRender) throw new Error(`No hay datos jerárquicos (treeRootData) para el gráfico ${graphType.value}.`);
-        try {
-            hierarchyData = d3.hierarchy(dataToRender, d => d.children); // Crea la jerarquía D3
-            // Para Sunburst, calcula la suma (usualmente para tamaño de arcos)
-            if (graphType.value === 'vertical') {
-                hierarchyData.sum(d => d.value || 1); // Asigna valor 1 si no existe 'value'
-            }
-        } catch (hierarchyError) {
-            console.error("Error al crear la jerarquía D3:", hierarchyError, dataToRender);
-            throw new Error(`Error procesando datos para ${graphType.value}: ${hierarchyError.message}`);
-        }
-        // Llama a la función de renderizado correspondiente
-        if (graphType.value === 'horizontal') renderTreeHorizontal(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
-        if (graphType.value === 'vertical') renderResplandorRadial(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
-        if (graphType.value === 'hourglass') renderHourglassGraph(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        if (!dataToRender) throw new Error("Datos jerárquicos requeridos para Resplandor Radial.");
+        // Sunburst needs hierarchy processed with sum() and sort()
+        hierarchyData = d3.hierarchy(dataToRender, d => d.children)
+                          .sum(d => d.value || 1) // Use 1 if no specific value
+                          .sort((a, b) => b.value - a.value);
+        renderResplandorRadial(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
         break;
-
       case 'radial': // Edge Bundling
-        // Este tipo espera {nodes, links} directamente
-        if (!dataToRender.nodes || !dataToRender.links) throw new Error('Datos inválidos (se esperan nodos y enlaces) para el gráfico radial.');
-        if (dataToRender.nodes.length === 0) console.warn("Renderizando gráfico radial sin nodos."); // Puede ser válido si solo hay enlaces?
-        // Llama a la función de renderizado radial
-        renderAgrupamientoRelacional(dataToRender, treeContainer.value, width, height, nodeFocusHandler, nodeModalHandler);
+        if (!dataToRender?.nodes || !dataToRender?.links) throw new Error("Datos inválidos para Agrupamiento Relacional.");
+        renderAgrupamientoRelacional(dataToRender, treeContainer.value, width, height, nodeClickHandler, nodeModalHandler);
         break;
-
+      case 'myHeritage':
+        if (!dataToRender) throw new Error("Datos jerárquicos requeridos para gráfico MyHeritage.");
+        hierarchyData = d3.hierarchy(dataToRender, d => d.children);
+        renderMyHeritageGraph(hierarchyData, treeContainer.value, width, height, nodeModalHandler);
+        break;
       default:
         throw new Error(`Tipo de gráfico desconocido: ${graphType.value}`);
     }
+
     console.log(`Gráfico ${graphType.value} renderizado exitosamente.`);
+
+    // Override de interacción: click simple abre árbol, ctrl+click o menú contextual abre modal
+    d3.select(treeContainer.value).selectAll('circle, g.person-node')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        if (event.ctrlKey || event.metaKey) handleNodeModal(d);
+        else handleNodeFocus(d);
+      })
+      .on('contextmenu', (event, d) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleNodeModal(d);
+      });
 
     // --- Integrar D3 Zoom ---
     const svg = d3.select(treeContainer.value).select('svg');
     if (!svg.empty()) {
+      // Find the zoom behavior instance if the render function returned it, or re-apply
+      // For now, re-applying zoom to the SVG element itself
       d3Zoom = d3.zoom()
-        .scaleExtent([0.2, 5])
+        .scaleExtent([0.1, 8])
         .on('zoom', (event) => {
-          svg.select('g').attr('transform', event.transform);
+          svg.select('g').attr('transform', event.transform); // Apply to the main 'g' element
         });
       svg.call(d3Zoom);
+      // Store the zoom instance if needed for programmatic zoom (zoomIn/Out buttons)
+    } else {
+      d3Zoom = null; // Reset if no SVG found
     }
 
   } catch (renderErr) {
+    // ... existing error handling ...
     console.error(`Error renderizando gráfico (${graphType.value}):`, renderErr);
     error.value = `Error al dibujar el gráfico ${graphType.value}: ${renderErr.message}`;
     clearTree(); // Limpia el SVG por si quedó en un estado inconsistente
@@ -1091,10 +1156,12 @@ watch(graphType, (newType, oldType) => {
     selectedFamily.value = null; // Limpia selección de familia radial
 
     // CORRECCIÓN CLAVE: Asigna los datos BASE correctos según el nuevo tipo
-    if (['horizontal', 'vertical', 'hourglass'].includes(newType)) {
-        currentViewData.value = treeRootData.value; // Jerárquico
-    } else { // 'force' y 'radial'
+    if (['horizontal', 'vertical', 'myHeritage'].includes(newType)) {
+        currentViewData.value = treeRootData.value; // Jerárquico para árboles y MyHeritage
+    } else if (['force', 'radial'].includes(newType)) {
         currentViewData.value = forceGraphData.value; // {nodes, links}
+    } else {
+        currentViewData.value = null; // Clear for unknown types
     }
     console.log("Datos base asignados para el nuevo tipo:", currentViewData.value ? 'OK' : 'NULL');
 
@@ -1125,6 +1192,14 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
   document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
   document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+  const gedcomRaw = localStorage.getItem('gedcomContent');
+  if (!gedcomRaw) {
+    router.push({ name: 'inicio' });
+    return;
+  }
+  // Aquí deberías parsear el archivo y continuar con la lógica del diagrama
+  gedcomData.value = parseGedcom.parse(gedcomRaw);
 });
 
 // Limpia el observador al desmontar el componente para evitar fugas de memoria
@@ -1144,6 +1219,25 @@ onBeforeUnmount(() => {
   document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
   document.removeEventListener('msfullscreenchange', handleFullscreenChange);
 });
+
+// Construye un árbol combinado de ascendientes y descendientes para un individuo
+function buildPersonHierarchy(person) {
+  if (!person) return null;
+  const visited = new Set();
+  function cloneNode(p) {
+    visited.add(p.id);
+    const node = { ...p, children: [] };
+    // Añadir ascendientes y descendientes
+    p._parents.forEach(par => {
+      if (!visited.has(par.id)) node.children.push(cloneNode(par));
+    });
+    p.children.forEach(ch => {
+      if (!visited.has(ch.id)) node.children.push(cloneNode(ch));
+    });
+    return node;
+  }
+  return cloneNode(person);
+}
 
 </script>
 

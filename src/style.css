@@ -56,6 +56,14 @@
   --graph-tooltip-bg: rgba(40, 40, 40, 0.95);
 }
 
+/* Colores para cajas de personas */
+.person-box.graph-primary-node { fill: var(--graph-primary-node); }
+.person-box.graph-spouse-node { fill: var(--graph-spouse-link); }
+.person-box.graph-parent-node { fill: var(--graph-parent-link); }
+.person-box.graph-child-node { fill: var(--graph-child-link); }
+.person-box.graph-sibling-node { fill: var(--graph-other-link); }
+.person-box.graph-other-node { fill: var(--graph-other-link); }
+
 a {
   font-weight: 500;
   color: #646cff;
@@ -105,13 +113,6 @@ button:focus-visible {
   background-color: var(--graph-background);
 }
 
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-  /* No forzar color ni fondo aquí */
-}
 
 @media (prefers-color-scheme: light) {
   :root {
