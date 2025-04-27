@@ -38,6 +38,16 @@ export function buildHourglassTree(centralId, individuals, families) {
     let currentAncestorGen = [centralNode]; // Empieza con el nodo central
     visitedAncestors.add(centralId);
 
+    // --- Normaliza fechas de nacimiento y fallecimiento para el centralNode y todos los individuos ---
+    Object.values(individuals).forEach(ind => {
+        if (!ind.birth) ind.birth = { date: '', place: '' };
+        if (!ind.death) ind.death = { date: '', place: '' };
+        if (typeof ind.birth.date !== 'string') ind.birth.date = ind.birth.date || '';
+        if (typeof ind.death.date !== 'string') ind.death.date = ind.death.date || '';
+        if (typeof ind.birth.place !== 'string') ind.birth.place = ind.birth.place || '';
+        if (typeof ind.death.place !== 'string') ind.death.place = ind.death.place || '';
+    });
+
     for (let gen = 1; gen <= MAX_GENERATIONS_UP; gen++) {
         const nextAncestorGenSet = new Set(); // Usar Set para evitar duplicados en la misma generación
         const nextAncestorGenNodes = [];
@@ -103,10 +113,17 @@ export function buildHourglassTree(centralId, individuals, families) {
     }
 
     // Cónyuges: Ya están en `centralNode._spouses` gracias al post-procesamiento del parser
-    centralNode._spouses?.forEach(spouse => {
-        spouse.generation = 0; // Misma generación
-    });
-
+    // Ordenar cónyuges: primero los actuales, luego separados/divorciados
+    if (Array.isArray(centralNode._spouses)) {
+        centralNode._spouses = centralNode._spouses.slice().sort((a, b) => {
+            const aDiv = hasDivorceOrSeparation(a, centralNode);
+            const bDiv = hasDivorceOrSeparation(b, centralNode);
+            return (aDiv === bDiv) ? 0 : aDiv ? 1 : -1;
+        });
+        centralNode._spouses.forEach(spouse => {
+            spouse.generation = 0; // Misma generación
+        });
+    }
 
     // Limpieza: Eliminar referencias circulares innecesarias para evitar problemas de serialización si fuera necesario
     // (Aunque Vue 3 maneja bien las referencias internas en reactividad)
@@ -117,6 +134,15 @@ export function buildHourglassTree(centralId, individuals, families) {
         ancestors, // Array de generaciones [[gen -N], [gen -N+1], ..., [gen -1]]
         descendants // Array de generaciones [[gen 1], [gen 2], ..., [gen M]]
     };
+}
+
+// Utilidad: Detecta si hay divorcio/separación entre dos personas
+function hasDivorceOrSeparation(spouse, central) {
+    // Busca eventos de divorcio/separación en los datos raw de ambos
+    const events = [spouse, central].flatMap(p => (p.raw?.events || []));
+    return events.some(ev =>
+        ["DIV", "SEPARATION", "DIVORCE", "SEP"].includes(ev.type?.toUpperCase())
+    );
 }
 
 /**

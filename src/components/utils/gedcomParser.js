@@ -9,151 +9,186 @@ export function parseGedcom(gedcomString) {
     const lines = gedcomString.split(/\r?\n/);
     const individuals = {}; // Almacena individuos por ID (@I...@)
     const families = {};    // Almacena familias por ID (@F...@)
+    const multimedia = {}; // Mapa de objetos multimedia (OBJE)
     let currentRecord = null; // Referencia al registro INDI o FAM actual
     let currentRecordType = null; // 'INDI' o 'FAM'
     let contextStack = []; // Pila para manejar la estructura de niveles y etiquetas
+    // --- NUEVO: Para eventos de familia ---
+    let currentFamEvent = null;
+    let currentObje = null;
 
+    // --- PRIMER PASO: Recopilar objetos multimedia (OBJE) y sus rutas ---
     lines.forEach(line => {
-        line = line.trim();
-        if (!line) return; // Ignorar líneas vacías
-
-        // Expresión regular para extraer nivel, etiqueta/ID y valor
         const match = line.match(/^(\d+)\s+(@\w+@|\w+)(?:\s+(.*))?$/);
-        if (!match) return; // Ignorar líneas mal formadas
+        if (!match) return;
+        const level = parseInt(match[1], 10);
+        const tagOrId = match[2];
+        const value = match[3] ? match[3].trim() : null;
+        if (level === 0 && value === 'OBJE') {
+            currentObje = { id: tagOrId, file: null, url: null };
+            multimedia[tagOrId] = currentObje;
+        } else if (currentObje && tagOrId === 'FILE') {
+            currentObje.file = value;
+        } else if (currentObje && tagOrId === 'TITL') {
+            // Si es una URL, guárdala como url
+            if (value && value.startsWith('http')) {
+                currentObje.url = value;
+            }
+        } else if (currentObje && tagOrId === 'CONC') {
+            // Concatenación de líneas largas para TITL
+            if (currentObje.url !== null && value) {
+                currentObje.url += value;
+            }
+        } else if (level === 0) {
+            currentObje = null;
+        }
+    });
 
+    // --- SEGUNDO PASO: Parseo normal de individuos y familias ---
+    let currentIndi = null;
+    let currentFam = null;
+    let currentEvent = null;
+    let currentEventType = null;
+    lines.forEach((line, idx) => {
+        line = line.trim();
+        if (!line) return;
+        const match = line.match(/^([0-9]+)\s+(@\w+@|\w+)(?:\s+(.*))?$/);
+        if (!match) return;
         const level = parseInt(match[1], 10);
         const tagOrId = match[2];
         const value = match[3] ? match[3].trim() : null;
 
-        // --- Manejo de Niveles y Contexto ---
-        // Si el nivel actual es menor o igual al último en la pila,
-        // desapilamos hasta encontrar el nivel correcto.
-        while (contextStack.length > 0 && level <= contextStack[contextStack.length - 1].level) {
-            contextStack.pop();
-        }
-
-        // Obtener el contexto padre (si existe)
-        const parentContext = contextStack.length > 0 ? contextStack[contextStack.length - 1] : null;
-
-        // --- Procesamiento de Registros de Nivel 0 (INDI, FAM) ---
+        // --- INICIO DE REGISTRO ---
         if (level === 0) {
-            contextStack = []; // Limpiar pila para nuevo registro de nivel superior
+            currentIndi = null;
+            currentFam = null;
+            currentEvent = null;
+            currentEventType = null;
             if (tagOrId.startsWith('@') && tagOrId.endsWith('@')) {
-                const id = tagOrId;
-                currentRecordType = value; // El tipo (INDI, FAM) es el valor en nivel 0
-
-                if (currentRecordType === 'INDI') {
-                    currentRecord = individuals[id] = {
-                        id: id,
-                        name: 'Desconocido',
-                        sex: 'U', // Unknown
-                        birth: null,
-                        death: null,
-                        famc: null, // Familia como hijo
-                        fams: [],   // Familias como cónyuge
-                        _familiesAsChild: [], // Referencias a objetos FAM
-                        _familiesAsSpouse: [], // Referencias a objetos FAM
-                        _parents: [], // Referencias a objetos INDI (padres)
-                        _children: [], // Referencias a objetos INDI (hijos)
-                        _spouses: [], // Referencias a objetos INDI (cónyuges)
+                if (value === 'INDI') {
+                    currentIndi = individuals[tagOrId] = {
+                        id: tagOrId,
+                        raw: [],
+                        events: [],
+                        famc: null,
+                        fams: [],
+                        _familiesAsChild: [],
+                        _familiesAsSpouse: [],
+                        _parents: [],
+                        _children: [],
+                        _spouses: [],
+                        _exSpouses: [],
+                        _stepChildren: [],
+                        _stepRelations: {},
                     };
-                    contextStack.push({ level: level, tag: currentRecordType, record: currentRecord });
-                } else if (currentRecordType === 'FAM') {
-                    currentRecord = families[id] = {
-                        id: id,
-                        husb: null, // ID del esposo
-                        wife: null, // ID de la esposa
-                        chil: [],   // IDs de los hijos
-                        marr: null, // Evento de matrimonio
-                        _husband: null, // Referencia al objeto INDI
-                        _wife: null,    // Referencia al objeto INDI
-                        _children: [],  // Referencias a objetos INDI
+                } else if (value === 'FAM') {
+                    currentFam = families[tagOrId] = {
+                        id: tagOrId,
+                        events: [],
+                        chil: [],
+                        _children: [],
+                        _stepChildren: [],
+                        _stepRelations: {},
                     };
-                    contextStack.push({ level: level, tag: currentRecordType, record: currentRecord });
-                } else {
-                    currentRecord = null; // Ignorar otros tipos de registro de nivel 0
-                    currentRecordType = null;
                 }
-            } else {
-                currentRecord = null; // Línea de nivel 0 inválida
-                currentRecordType = null;
             }
         }
-        // --- Procesamiento de Sub-etiquetas (Nivel > 0) ---
-        else if (currentRecord && parentContext) {
-            const currentTag = tagOrId;
-            const currentContext = { level: level, tag: currentTag, record: parentContext.record }; // Hereda el registro del padre
-            contextStack.push(currentContext);
-
-            // Procesar etiquetas dentro de un registro INDI
-            if (parentContext.tag === 'INDI') {
-                const indi = parentContext.record;
-                switch (currentTag) {
+        // --- INDIVIDUO ---
+        if (currentIndi) {
+            currentIndi.raw.push(line);
+            if (level === 1) {
+                currentEvent = null;
+                currentEventType = null;
+                switch (tagOrId) {
                     case 'NAME':
-                        indi.name = value ? value.replace(/\//g, '') : 'Desconocido';
+                        currentIndi.name = value ? value.replace(/\//g, '') : 'Desconocido';
                         break;
                     case 'SEX':
-                        indi.sex = value || 'U';
+                        currentIndi.sex = value || 'U';
                         break;
                     case 'BIRT':
-                        // Podríamos parsear sub-etiquetas DATE y PLAC aquí si existieran
-                        indi.birth = { date: null, place: null }; // Placeholder
-                        break;
                     case 'DEAT':
-                        indi.death = { date: null, place: null, value: true }; // Placeholder, value=true indica que falleció
-                        break;
-                    case 'FAMC': // Familia donde es hijo
-                        indi.famc = value;
-                        break;
-                    case 'FAMS': // Familia donde es cónyuge
-                        indi.fams.push(value);
-                        break;
-                    // Sub-etiquetas de eventos (DATE, PLAC)
-                    case 'DATE':
-                        if (parentContext.level === level - 1) { // Asegura que DATE es hijo directo de BIRT/DEAT/MARR etc.
-                            const eventTag = parentContext.tag.toLowerCase();
-                            if (indi[eventTag]) {
-                                indi[eventTag].date = value;
-                            }
+                    case 'EVEN':
+                    case 'RESI':
+                    case 'FACT':
+                    case 'CHAN':
+                    case 'BAPM':
+                    case 'BURI':
+                        currentEvent = { type: tagOrId, attrs: {}, lines: [line] };
+                        currentEventType = tagOrId;
+                        currentIndi.events.push(currentEvent);
+                        if (tagOrId === 'BIRT') {
+                            currentIndi.birth = currentEvent.attrs;
+                        } else if (tagOrId === 'DEAT') {
+                            currentIndi.death = currentEvent.attrs;
                         }
                         break;
-                    case 'PLAC':
-                         if (parentContext.level === level - 1) {
-                            const eventTag = parentContext.tag.toLowerCase();
-                            if (indi[eventTag]) {
-                                indi[eventTag].place = value;
-                            }
-                        }
+                    case 'FAMC':
+                        currentIndi.famc = value;
+                        break;
+                    case 'FAMS':
+                        currentIndi.fams.push(value);
+                        break;
+                    case 'OBJE':
+                        if (!currentIndi.objs) currentIndi.objs = [];
+                        currentIndi.objs.push(value);
+                        break;
+                    default:
+                        // Otros campos de nivel 1
                         break;
                 }
+            } else if (level === 2 && currentEvent) {
+                currentEvent.lines.push(line);
+                currentEvent.attrs[tagOrId.toLowerCase()] = value;
+                // Si es BIRT o DEAT, también copia a birth/death directo
+                if (currentEventType === 'BIRT' && currentIndi.birth) {
+                    currentIndi.birth[tagOrId.toLowerCase()] = value;
+                } else if (currentEventType === 'DEAT' && currentIndi.death) {
+                    currentIndi.death[tagOrId.toLowerCase()] = value;
+                }
+            } else if (level > 2 && currentEvent) {
+                currentEvent.lines.push(line);
+                // Guarda atributos anidados como sub-objeto
+                if (!currentEvent.attrs[tagOrId.toLowerCase()]) {
+                    currentEvent.attrs[tagOrId.toLowerCase()] = value;
+                }
             }
-            // Procesar etiquetas dentro de un registro FAM
-            else if (parentContext.tag === 'FAM') {
-                const fam = parentContext.record;
-                switch (currentTag) {
+        }
+        // --- FAMILIA ---
+        if (currentFam) {
+            if (level === 1) {
+                switch (tagOrId) {
                     case 'HUSB':
-                        fam.husb = value;
+                        currentFam.husb = value;
                         break;
                     case 'WIFE':
-                        fam.wife = value;
+                        currentFam.wife = value;
                         break;
                     case 'CHIL':
-                        fam.chil.push(value);
+                        currentFam.chil.push(value);
                         break;
                     case 'MARR':
-                        fam.marr = { date: null, place: null }; // Placeholder
+                    case 'DIV':
+                    case 'SEPARATION':
+                    case 'DIVORCE':
+                    case 'ENGA':
+                        currentEvent = { type: tagOrId, attrs: {}, lines: [line] };
+                        currentFam.events.push(currentEvent);
+                        if (tagOrId === 'MARR') currentFam.marr = currentEvent.attrs;
                         break;
-                    // Sub-etiquetas de eventos (DATE, PLAC) para MARR
-                    case 'DATE':
-                        if (parentContext.level === level - 1 && parentContext.tag === 'MARR') {
-                             if (fam.marr) fam.marr.date = value;
-                        }
+                    default:
                         break;
-                    case 'PLAC':
-                        if (parentContext.level === level - 1 && parentContext.tag === 'MARR') {
-                             if (fam.marr) fam.marr.place = value;
-                        }
-                        break;
+                }
+            } else if (level === 2 && currentEvent) {
+                currentEvent.lines.push(line);
+                currentEvent.attrs[tagOrId.toLowerCase()] = value;
+                if (currentEvent.type === 'MARR' && currentFam.marr) {
+                    currentFam.marr[tagOrId.toLowerCase()] = value;
+                }
+            } else if (level > 2 && currentEvent) {
+                currentEvent.lines.push(line);
+                if (!currentEvent.attrs[tagOrId.toLowerCase()]) {
+                    currentEvent.attrs[tagOrId.toLowerCase()] = value;
                 }
             }
         }
@@ -181,9 +216,18 @@ export function parseGedcom(gedcomString) {
                 // Añadir cónyuge(s)
                 const spouseId = (familyAsSpouse.husb === indi.id) ? familyAsSpouse.wife : familyAsSpouse.husb;
                 if (spouseId && individuals[spouseId]) {
-                    // Evitar duplicados si está en múltiples familias con la misma persona
-                    if (!indi._spouses.some(sp => sp.id === spouseId)) {
-                        indi._spouses.push(individuals[spouseId]);
+                    // Determinar si la relación está activa o terminada
+                    const isEnded = familyAsSpouse.events.some(ev =>
+                        ["DIV", "SEPARATION", "DIVORCE", "SEP"].includes(ev.type?.toUpperCase())
+                    );
+                    if (isEnded) {
+                        if (!indi._exSpouses.some(sp => sp.id === spouseId)) {
+                            indi._exSpouses.push(individuals[spouseId]);
+                        }
+                    } else {
+                        if (!indi._spouses.some(sp => sp.id === spouseId)) {
+                            indi._spouses.push(individuals[spouseId]);
+                        }
                     }
                 }
                 // Añadir hijos de esta unión
@@ -195,6 +239,16 @@ export function parseGedcom(gedcomString) {
                         }
                     }
                 });
+                // Hijastros
+                if (familyAsSpouse._stepRelations) {
+                    Object.entries(familyAsSpouse._stepRelations).forEach(([rel, val]) => {
+                        if (val && individuals[val]) {
+                            if (!indi._stepChildren.some(ch => ch.id === val)) {
+                                indi._stepChildren.push(individuals[val]);
+                            }
+                        }
+                    });
+                }
             }
         });
     });
@@ -212,8 +266,26 @@ export function parseGedcom(gedcomString) {
                  fam._children.push(individuals[childId]);
              }
          });
+         // Determinar estado de la relación
+         fam.status = fam.events.some(ev => ["DIV", "SEPARATION", "DIVORCE", "SEP"].includes(ev.type?.toUpperCase())) ? 'ended' : 'active';
      });
 
+    // Función segura para stringify que ignora referencias circulares
+    function safeStringify(obj, space = 2) {
+      const seen = new WeakSet();
+      return JSON.stringify(obj, function(key, value) {
+        if (typeof value === "object" && value !== null) {
+          if (seen.has(value)) return undefined;
+          seen.add(value);
+        }
+        return value;
+      }, space);
+    }
+
+    // DEBUG: Mostrar todos los individuos parseados con fechas
+    console.log('DEBUG individuos parseados:', safeStringify(individuals));
+    // DEBUG: Mostrar todas las familias parseadas
+    console.log('DEBUG familias parseadas:', safeStringify(families));
     return { individuals, families };
 }
 

@@ -10,6 +10,9 @@
       <v-divider />
       <v-card-text>
         <template v-if="individuo">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <img v-if="individuo.photo" :src="individuo.photo" alt="Foto" style="max-width:120px;max-height:120px;border-radius:50%;object-fit:cover;border:2px solid #bbb;margin-bottom:8px;" />
+          </div>
           <v-list density="compact">
             <v-list-item v-if="individuo.name || individuo.label">
               <v-list-item-title><b>Nombre:</b> {{ individuo.name || individuo.label }}</v-list-item-title>
@@ -20,11 +23,14 @@
             <v-list-item v-if="individuo.gender">
               <v-list-item-title><b>Sexo:</b> {{ individuo.gender }}</v-list-item-title>
             </v-list-item>
-            <v-list-item v-if="individuo.birth || individuo.birthDate">
-              <v-list-item-title><b>Nacimiento:</b> {{ individuo.birth || individuo.birthDate }}<span v-if="individuo.birthPlace">, {{ individuo.birthPlace }}</span></v-list-item-title>
+            <v-list-item v-if="individuo.birth || individuo.birthPlace">
+              <v-list-item-title><b>Nacimiento:</b> {{ individuo.birth || 'Sin fecha' }}<span v-if="individuo.birthPlace">, {{ individuo.birthPlace }}</span></v-list-item-title>
             </v-list-item>
-            <v-list-item v-if="individuo.death || individuo.deathDate">
-              <v-list-item-title><b>Fallecimiento:</b> {{ individuo.death || individuo.deathDate }}<span v-if="individuo.deathPlace">, {{ individuo.deathPlace }}</span></v-list-item-title>
+            <v-list-item v-if="individuo.death || individuo.deathPlace">
+              <v-list-item-title><b>Fallecimiento:</b> {{ individuo.death || 'Sin fecha' }}<span v-if="individuo.deathPlace">, {{ individuo.deathPlace }}</span></v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="individuo.email">
+              <v-list-item-title><b>Email:</b> {{ individuo.email }}</v-list-item-title>
             </v-list-item>
             <v-list-item v-if="individuo.occupation">
               <v-list-item-title><b>Ocupación:</b> {{ individuo.occupation }}</v-list-item-title>
@@ -51,6 +57,18 @@
               <v-list-item-title><b>Cónyuges:</b> {{ individuo.spouses.join('; ') }}</v-list-item-title>
             </v-list-item>
           </v-list>
+          <v-divider class="my-2" />
+          <div v-if="individuo.events && individuo.events.length">
+            <b>Eventos y hechos:</b>
+            <ul style="margin:0 0 0 10px;padding:0;">
+              <li v-for="(ev, idx) in individuo.events" :key="idx" style="margin-bottom:2px;">
+                <span style="font-weight:600;">{{ ev.type }}</span>
+                <span v-for="(val, key) in ev.attrs" :key="key" style="margin-left:8px;">
+                  <b>{{ key }}:</b> {{ val }}
+                </span>
+              </li>
+            </ul>
+          </div>
         </template>
         <template v-else>
           <v-alert type="info">No hay datos para mostrar.</v-alert>

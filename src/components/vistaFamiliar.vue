@@ -14,10 +14,40 @@
                     :fill="node.color"
                     :stroke="node.isCentral ? '#3949ab' : '#333'"
                     :stroke-width="node.isCentral ? 4 : 2"
-                    rx="10" :class="['svg-node', node.role]" />
-              <text x="0" y="-2" text-anchor="middle" font-size="15" fill="#222" style="font-weight:500;">{{ node.label }}</text>
-              <foreignObject :x="-(nodeW/2)" :y="nodeH/2 - 2" :width="nodeW" height="30">
-                <div style="display:flex;justify-content:center;align-items:center;width:100%;height:28px;">
+                    rx="20" :class="['svg-node', node.role]" />
+              <!-- Nombre multilinea -->
+              <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+10" :width="nodeW-20" :height="60">
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
+                  <span style="font-size:18px;font-weight:600;word-break:break-word;white-space:pre-line;text-align:center;line-height:1.2;">
+                    {{ node.fullName || node.label }}
+                  </span>
+                </div>
+              </foreignObject>
+              <!-- Foto debajo del nombre -->
+              <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+70" :width="nodeW-20" :height="60">
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
+                  <img
+                    v-if="getNodePhoto(node)"
+                    :src="getNodePhoto(node)"
+                    alt="Foto"
+                    style="max-width:48px;max-height:48px;border-radius:50%;object-fit:cover;border:1.5px solid #bbb;"
+                  />
+                </div>
+              </foreignObject>
+              <!-- Fechas y lugares debajo de la foto -->
+              <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+135" :width="nodeW-20" :height="60">
+                <div style="margin-top:6px;font-size:14px;color:#444;text-align:center;line-height:1.1;">
+                  <div>
+                    <span>Nac: {{ node.raw?.birth?.date || 'Sin fecha' }}<span v-if="node.raw?.birth?.place">, {{ node.raw.birth.place }}</span></span>
+                  </div>
+                  <div v-if="node.raw?.death?.date || node.raw?.death?.place">
+                    <span>Fallec: {{ node.raw?.death?.date || 'Sin fecha' }}<span v-if="node.raw?.death?.place">, {{ node.raw.death.place }}</span></span>
+                  </div>
+                </div>
+              </foreignObject>
+              <!-- Botón ver más -->
+              <foreignObject :x="-(nodeW/2)" :y="(nodeH/2)-40" :width="nodeW" height="40">
+                <div style="display:flex;justify-content:center;align-items:center;width:100%;height:38px;">
                   <button class="ver-mas-btn" @click.stop="abrirModal(node)">ver más información</button>
                 </div>
               </foreignObject>
@@ -69,7 +99,8 @@ import { useRouter } from 'vue-router';
 import { parseGedcom, findInitialIndividual } from './utils/gedcomParser.js';
 import { buildHourglassTree } from './utils/hourglassTree.js';
 
-const nodeW = 120, nodeH = 40, vGap = 100, hGap = 160;
+// Ajusta dimensiones y separación para mejor distribución
+const nodeW = 180, nodeH = 250, vGap = 260, hGap = 260;
 const svgWidth = 1200, svgHeight = 800;
 const svgRef = ref();
 const zoom = ref(1);
@@ -236,7 +267,7 @@ function buildHourglass() {
     gen.forEach((person, i) => {
       n.push({
         id: person.id,
-        label: truncateName(person.name),
+        label: person.name,
         fullName: person.name,
         x: (i - (gen.length-1)/2) * hGapAnc,
         y: -vGapAnc * (hg.ancestors.length-gIdx),
@@ -252,7 +283,7 @@ function buildHourglass() {
   // Nodo central
   n.push({
     id: hg.centralNode.id,
-    label: truncateName(hg.centralNode.name),
+    label: hg.centralNode.name,
     fullName: hg.centralNode.name,
     x: 0,
     y: 0,
@@ -267,7 +298,7 @@ function buildHourglass() {
   spouses.forEach((spouse, i) => {
     n.push({
       id: spouse.id,
-      label: truncateName(spouse.name),
+      label: spouse.name,
       fullName: spouse.name,
       x: hGapSpo*(i+1),
       y: 0,
@@ -283,7 +314,7 @@ function buildHourglass() {
   (hg.centralNode._siblings||[]).forEach((sib, i) => {
     n.push({
       id: sib.id,
-      label: truncateName(sib.name),
+      label: sib.name,
       fullName: sib.name,
       x: -hGapSib*(i+1),
       y: 0,
@@ -300,7 +331,7 @@ function buildHourglass() {
     gen.forEach((person, i) => {
       n.push({
         id: person.id,
-        label: truncateName(person.name),
+        label: person.name,
         fullName: person.name,
         x: (i - (gen.length-1)/2) * hGapDesc,
         y: vGapDesc * (gIdx+1),
@@ -318,6 +349,18 @@ function buildHourglass() {
   n.forEach(node => {
     nodePosMap.set(node.id, { x: node.x, y: node.y });
   });
+  // DEBUG: Mostrar nodos generados para el diagrama evitando referencias circulares
+  function safeStringify(obj, space = 2) {
+    const seen = new WeakSet();
+    return JSON.stringify(obj, function(key, value) {
+      if (typeof value === "object" && value !== null) {
+        if (seen.has(value)) return undefined;
+        seen.add(value);
+      }
+      return value;
+    }, space);
+  }
+  console.log('DEBUG nodos para diagrama:', safeStringify(n));
   // --- Generar líneas usando posiciones reales ---
   const l = [];
   // Ancestros: de cada padre a su hijo
@@ -405,7 +448,7 @@ function buildHourglass() {
   });
   // --- Hijastros y padrastros: línea punteada ---
   if (hg.centralNode._stepRelations) {
-    hg.centralNode._stepRelations.forEach(rel => {
+    Object.values(hg.centralNode._stepRelations).forEach(rel => {
       const from = nodePosMap.get(rel.parentId);
       const to = nodePosMap.get(rel.childId);
       if (from && to) {
@@ -414,7 +457,7 @@ function buildHourglass() {
           y1: from.y,
           x2: to.x,
           y2: to.y,
-          color: '#ab47bc',
+          color: '#ffb300',
           dashed: true
         });
       }
@@ -441,6 +484,21 @@ function truncateName(name, max = 18) {
   return name.length > max ? name.slice(0, max - 1) + '…' : name;
 }
 
+// --- helpers para fotos ---
+function getNodePhoto(node) {
+  // 1. Si hay campo photo directo
+  if (node.raw?.photo) return node.raw.photo;
+  // 2. Si hay objetos multimedia, busca el primero que sea url o file
+  if (Array.isArray(node.raw?.objs) && node.raw.objs.length > 0 && gedcomData.value) {
+    for (const objId of node.raw.objs) {
+      const m = gedcomData.value.multimedia?.[objId];
+      if (m?.url) return m.url;
+      if (m?.file) return m.file;
+    }
+  }
+  return null;
+}
+
 watch(centralId, buildHourglass);
 
 function onNodeClick(node) {
@@ -453,24 +511,26 @@ function onNodeClick(node) {
 const modalVisible = ref(false);
 const modalIndividuo = ref(null);
 function abrirModal(node) {
-  // Puedes enriquecer los datos aquí si lo deseas
   const raw = node.raw || {};
   modalIndividuo.value = {
     name: node.fullName || node.label,
     id: node.id,
     gender: raw.gender || raw.sex || '',
-    birth: node.birth || (raw.birth && raw.birth.date),
-    birthPlace: raw.birth && raw.birth.place,
-    death: node.death || (raw.death && raw.death.date),
-    deathPlace: raw.death && raw.death.place,
+    birth: raw.birth?.date,
+    birthPlace: raw.birth?.place,
+    death: raw.death?.date,
+    deathPlace: raw.death?.place,
     occupation: raw.occupation || (raw.occupation && raw.occupation[0]),
     religion: raw.religion,
     nationality: raw.nationality,
+    email: raw.email,
     notes: Array.isArray(raw.notes) ? raw.notes.join('; ') : raw.notes,
     parents: (raw._parents||[]).map(p => p.name || p.label || p.id),
     siblings: (raw._siblings||[]).map(h => h.name || h.label || h.id),
     children: (raw._children||[]).map(h => h.name || h.label || h.id),
-    spouses: (raw._spouses||[]).map(s => s.name || s.label || s.id)
+    spouses: (raw._spouses||[]).map(s => s.name || s.label || s.id),
+    photo: getNodePhoto(node),
+    events: raw.events || []
   };
   modalVisible.value = true;
 }
