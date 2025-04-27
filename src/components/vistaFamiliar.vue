@@ -1,20 +1,21 @@
 <template>
   <div class="hourglass-svg-wrapper" role="main" aria-label="Diagrama árbol familiar">
     <div ref="diagramContainerRef" class="diagram-container">
-      <div class="svg-responsive-container">
+      <div class="svg-responsive-container" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
         <svg ref="svgRef" :width="svgWidth" :height="svgHeight" @wheel.prevent="onWheel" @mousedown="onSvgMousedown" style="background:#f5f5f5" tabindex="0" aria-label="Árbol genealógico">
           <g :transform="svgTransform">
             <!-- Líneas -->
-            <line v-for="(line, i) in lines" :key="'l'+i" :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2" :stroke="line.color" :stroke-dasharray="line.dashed ? '4 2' : 'none'" stroke-width="2" />
+            <line v-for="(line, i) in lines" :key="'l'+i" :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2" :stroke="getLineColor(line)" :stroke-dasharray="line.dashed ? '4 2' : 'none'" stroke-width="2" />
             <!-- Nodos -->
             <g v-for="(node, i) in nodes" :key="'n'+i" :transform="`translate(${node.x},${node.y})`"
                @click="onNodeClick(node)"
                style="cursor:pointer">
               <rect :width="nodeW" :height="nodeH" :x="-(nodeW/2)" :y="-(nodeH/2)"
-                    :fill="node.color"
-                    :stroke="node.isCentral ? '#3949ab' : '#333'"
+                    :fill="getNodeColor(node)"
+                    :stroke="node.isCentral ? 'var(--color-central-border, #3949ab)' : 'var(--color-border, #333)'"
                     :stroke-width="node.isCentral ? 4 : 2"
-                    rx="20" :class="['svg-node', node.role]" />
+                    rx="20"
+                    :class="['svg-node', { conyuge: node.role === 'conyuge', exconyuge: node.role === 'exconyuge' }]" />
               <!-- Nombre multilinea -->
               <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+10" :width="nodeW-20" :height="60">
                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
@@ -86,8 +87,26 @@
         <v-btn icon color="primary" size="large" @click="onFooterFullscreen" aria-label="Pantalla completa">
           <v-icon>{{ isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen' }}</v-icon>
         </v-btn>
+        <v-btn icon color="primary" size="large" @click="showConventions = !showConventions" aria-label="Mostrar/Ocultar convenciones">
+          <v-icon>{{ showConventions ? 'mdi-help-circle' : 'mdi-help-circle-outline' }}</v-icon>
+        </v-btn>
       </div>
       <modalDetalle :visible="modalVisible" :individuo="modalIndividuo" @close="modalVisible=false" />
+      <!-- Panel de convenciones -->
+      <div v-if="showConventions" class="panel-convenciones">
+        <div class="conv-title">Convenciones del diagrama</div>
+        <div class="conv-row"><span class="conv-box central"></span><span>Individuo central</span></div>
+        <div class="conv-row"><span class="conv-box padre"></span><span>Padre/Madre biológico/a</span></div>
+        <div class="conv-row"><span class="conv-box padrastro"></span><span>Padrastro/Madrastra</span></div>
+        <div class="conv-row"><span class="conv-box hermano"></span><span>Hermano/a</span></div>
+        <div class="conv-row"><span class="conv-box conyuge"></span><span>Cónyuge</span></div>
+        <div class="conv-row"><span class="conv-box exconyuge"></span><span>Ex-cónyuge</span></div>
+        <div class="conv-row"><span class="conv-box hijo"></span><span>Hijo/a</span></div>
+        <div class="conv-row"><span class="conv-line biologica"></span><span>Línea: vínculo biológico</span></div>
+        <div class="conv-row"><span class="conv-line politica"></span><span>Línea punteada: vínculo político (padrastro/madrastra, hijastro/a)</span></div>
+        <div class="conv-row"><span class="conv-line pareja"></span><span>Línea rosa: pareja</span></div>
+        <div class="conv-row"><span class="conv-line expareja"></span><span>Línea rosa punteada: ex-pareja</span></div>
+      </div>
     </div>
   </div>
 </template>
@@ -138,6 +157,66 @@ function onSvgMouseup() {
   isPanning.value = false;
   window.removeEventListener('mousemove', onSvgMousemove);
   window.removeEventListener('mouseup', onSvgMouseup);
+}
+
+// --- Soporte para pan y zoom táctil en móviles ---
+let lastTouchDist = null;
+let lastTouchMid = null;
+function getTouchDist(e) {
+  if (e.touches.length < 2) return 0;
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+function getTouchMid(e) {
+  if (e.touches.length < 2) return {x:0, y:0};
+  return {
+    x: (e.touches[0].clientX + e.touches[1].clientX)/2,
+    y: (e.touches[0].clientY + e.touches[1].clientY)/2
+  };
+}
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    isPanning.value = true;
+    mouseStart.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    panStart.value = { ...pan.value };
+  } else if (e.touches.length === 2) {
+    lastTouchDist = getTouchDist(e);
+    lastTouchMid = getTouchMid(e);
+  }
+}
+function onTouchMove(e) {
+  if (e.touches.length === 1 && isPanning.value) {
+    const dx = e.touches[0].clientX - mouseStart.value.x;
+    const dy = e.touches[0].clientY - mouseStart.value.y;
+    pan.value = {
+      x: panStart.value.x + dx,
+      y: panStart.value.y + dy
+    };
+  } else if (e.touches.length === 2) {
+    const newDist = getTouchDist(e);
+    if (lastTouchDist) {
+      const scale = newDist / lastTouchDist;
+      zoom.value = Math.max(0.2, Math.min(zoom.value * scale, 2));
+      lastTouchDist = newDist;
+    }
+    // Pan con dos dedos
+    const newMid = getTouchMid(e);
+    if (lastTouchMid) {
+      const dx = newMid.x - lastTouchMid.x;
+      const dy = newMid.y - lastTouchMid.y;
+      pan.value = {
+        x: pan.value.x + dx,
+        y: pan.value.y + dy
+      };
+      lastTouchMid = newMid;
+    }
+  }
+}
+function onTouchEnd(e) {
+  isPanning.value = false;
+  lastTouchDist = null;
+  lastTouchMid = null;
 }
 
 // --- GEDCOM y lógica hourglass ---
@@ -238,11 +317,44 @@ function handleFileChange(e) {
   reader.readAsText(file);
 }
 
+// --- Computed: padres biológicos y padrastros del nodo central ---
+const todosLosPadres = computed(() => {
+  if (!hourglass.value.centralNode) return [];
+  const padres = hourglass.value.centralNode._parents ? [...hourglass.value.centralNode._parents] : [];
+  // Agrega padrastros desde _stepRelations
+  if (hourglass.value.centralNode._stepRelations && gedcomData.value) {
+    Object.values(hourglass.value.centralNode._stepRelations).forEach(rel => {
+      if (rel.parentId && !padres.some(p => p.id === rel.parentId)) {
+        const padrastro = gedcomData.value.individuals[rel.parentId];
+        if (padrastro) padres.push({ ...padrastro, _isStep: true });
+      }
+    });
+  }
+  return padres.filter((p, idx, arr) => arr.findIndex(pp => pp.id === p.id) === idx);
+});
+
 function buildHourglass() {
   if (!centralId.value || !gedcomData.value) return;
   const hg = buildHourglassTree(centralId.value, gedcomData.value.individuals, gedcomData.value.families);
   hourglass.value = hg;
   const n = [];
+
+  // --- Función local para obtener todos los padres (biológicos y padrastros) ---
+  function getTodosLosPadres(centralNode) {
+    const padres = centralNode._parents ? [...centralNode._parents] : [];
+    if (centralNode._stepRelations && gedcomData.value) {
+      Object.values(centralNode._stepRelations).forEach(rel => {
+        if (rel.parentId && !padres.some(p => p.id === rel.parentId)) {
+          const padrastro = gedcomData.value.individuals[rel.parentId];
+          if (padrastro) padres.push({ ...padrastro, _isStep: true });
+        }
+      });
+    }
+    return padres.filter((p, idx, arr) => arr.findIndex(pp => pp.id === p.id) === idx);
+  }
+
+  const padresYpadrastros = getTodosLosPadres(hg.centralNode);
+
   // --- Ordenar cónyuges: vigente primero, luego separados/divorciados ---
   let spouses = (hg.centralNode._spouses||[]);
   spouses = spouses.slice().sort((a, b) => {
@@ -280,6 +392,34 @@ function buildHourglass() {
       });
     });
   });
+  // --- Agregar padrastros como nodos en diagonal abajo a la derecha del central si no están ya ---
+  let padrastroOffset = 1;
+  padresYpadrastros.forEach(parent => {
+    if (!n.some(node => node.id === parent.id) && parent.id !== hg.centralNode.id) {
+      let posX = hGapSpo * padrastroOffset;
+      let posY = nodeH + 60; // igual que exparejas
+      if (!parent._isStep) {
+        // Si es padre biológico, mantener arriba
+        posX = 0;
+        posY = -vGapAnc * (hg.ancestors.length+1);
+      } else {
+        padrastroOffset++;
+      }
+      n.push({
+        id: parent.id,
+        label: parent.name,
+        fullName: parent.name,
+        x: posX,
+        y: posY,
+        color: parent._isStep ? '#ffe082' : '#fffde7', // Color diferente para padrastro
+        role: parent._isStep ? 'padrastro' : 'ancestro',
+        birth: parent.birth?.date,
+        death: parent.death?.date,
+        raw: parent,
+        isCentral: false
+      });
+    }
+  });
   // Nodo central
   n.push({
     id: hg.centralNode.id,
@@ -295,20 +435,51 @@ function buildHourglass() {
     isCentral: true
   });
   // Cónyuges (ordenados)
-  spouses.forEach((spouse, i) => {
-    n.push({
-      id: spouse.id,
-      label: spouse.name,
-      fullName: spouse.name,
-      x: hGapSpo*(i+1),
-      y: 0,
-      color: '#fce4ec',
-      role: 'conyuge',
-      birth: spouse.birth?.date,
-      death: spouse.death?.date,
-      raw: spouse,
-      isCentral: false
-    });
+  let allSpouses = [
+    ...(hg.centralNode._spouses || []).map(s => ({ ...s, _isEx: false })),
+    ...(hg.centralNode._exSpouses || []).map(s => ({ ...s, _isEx: true }))
+  ];
+  allSpouses = allSpouses.sort((a, b) => (a._isEx === b._isEx) ? 0 : a._isEx ? 1 : -1);
+  let spouseOffset = 1;
+  let exOffset = 1;
+  allSpouses.forEach((spouse, i) => {
+    // Forzar el role y depurar
+    const role = spouse._isEx ? 'exconyuge' : 'conyuge';
+    // DEBUG: Forzar y mostrar en consola
+    console.log('Nodo cónyuge:', spouse.name, 'isEx:', spouse._isEx, 'role:', role, spouse.id);
+    if (!spouse._isEx) {
+      n.push({
+        ...spouse,
+        id: spouse.id,
+        label: spouse.name,
+        fullName: spouse.name,
+        x: hGapSpo * spouseOffset,
+        y: 0,
+        color: '#fce4ec',
+        role,
+        birth: spouse.birth?.date,
+        death: spouse.death?.date,
+        raw: spouse,
+        isCentral: false
+      });
+      spouseOffset++;
+    } else {
+      n.push({
+        ...spouse,
+        id: spouse.id,
+        label: spouse.name,
+        fullName: spouse.name,
+        x: hGapSpo * (exOffset + 2),
+        y: nodeH + 60,
+        color: '#ffe0e0',
+        role,
+        birth: spouse.birth?.date,
+        death: spouse.death?.date,
+        raw: spouse,
+        isCentral: false
+      });
+      exOffset++;
+    }
   });
   // Hermanos
   (hg.centralNode._siblings||[]).forEach((sib, i) => {
@@ -349,18 +520,6 @@ function buildHourglass() {
   n.forEach(node => {
     nodePosMap.set(node.id, { x: node.x, y: node.y });
   });
-  // DEBUG: Mostrar nodos generados para el diagrama evitando referencias circulares
-  function safeStringify(obj, space = 2) {
-    const seen = new WeakSet();
-    return JSON.stringify(obj, function(key, value) {
-      if (typeof value === "object" && value !== null) {
-        if (seen.has(value)) return undefined;
-        seen.add(value);
-      }
-      return value;
-    }, space);
-  }
-  console.log('DEBUG nodos para diagrama:', safeStringify(n));
   // --- Generar líneas usando posiciones reales ---
   const l = [];
   // Ancestros: de cada padre a su hijo
@@ -382,8 +541,24 @@ function buildHourglass() {
       });
     });
   });
-  // Central: padres a central
-  (hg.centralNode._parents||[]).forEach(parent => {
+  // --- Computed: padres biológicos y padrastros del nodo central ---
+  const todosLosPadres = computed(() => {
+    if (!hourglass.value.centralNode) return [];
+    const padres = hourglass.value.centralNode._parents ? [...hourglass.value.centralNode._parents] : [];
+    // Agrega padrastros desde _stepRelations
+    if (hourglass.value.centralNode._stepRelations && gedcomData.value) {
+      Object.values(hourglass.value.centralNode._stepRelations).forEach(rel => {
+        if (rel.parentId && !padres.some(p => p.id === rel.parentId)) {
+          const padrastro = gedcomData.value.individuals[rel.parentId];
+          if (padrastro) padres.push({ ...padrastro, _isStep: true });
+        }
+      });
+    }
+    // Evita duplicados
+    return padres.filter((p, idx, arr) => arr.findIndex(pp => pp.id === p.id) === idx);
+  });
+  // Central: padres a central (biológicos y padrastros)
+  padresYpadrastros.forEach(parent => {
     const from = nodePosMap.get(parent.id);
     const to = nodePosMap.get(hg.centralNode.id);
     if (from && to) {
@@ -392,13 +567,13 @@ function buildHourglass() {
         y1: from.y,
         x2: to.x,
         y2: to.y,
-        color: '#fbc02d',
-        dashed: false
+        color: parent._isStep ? 'var(--color-linea-politica, #ffb300)' : 'var(--color-linea-biologica, #fbc02d)',
+        dashed: !!parent._isStep
       });
     }
   });
-  // Central: cónyuges (dashed si separados/divorciados)
-  spouses.forEach(spouse => {
+  // Central: cónyuges y exparejas (línea rosada, dashed si ex)
+  allSpouses.forEach(spouse => {
     const from = nodePosMap.get(hg.centralNode.id);
     const to = nodePosMap.get(spouse.id);
     if (from && to) {
@@ -407,8 +582,8 @@ function buildHourglass() {
         y1: from.y,
         x2: to.x,
         y2: to.y,
-        color: '#ec407a',
-        dashed: hasDivorceOrSeparation(spouse, hg.centralNode)
+        color: spouse._isEx ? 'var(--color-linea-expareja, #ff8a80)' : 'var(--color-linea-pareja, #ec407a)',
+        dashed: !!spouse._isEx
       });
     }
   });
@@ -422,7 +597,7 @@ function buildHourglass() {
         y1: from.y,
         x2: to.x,
         y2: to.y,
-        color: '#66bb6a',
+        color: 'var(--color-linea-hermano, #66bb6a)',
         dashed: false
       });
     }
@@ -439,7 +614,7 @@ function buildHourglass() {
             y1: from.y,
             x2: to.x,
             y2: to.y,
-            color: '#0097a7',
+            color: 'var(--color-linea-descendiente, #0097a7)',
             dashed: false
           });
         }
@@ -457,7 +632,7 @@ function buildHourglass() {
           y1: from.y,
           x2: to.x,
           y2: to.y,
-          color: '#ffb300',
+          color: 'var(--color-linea-politica, #ffb300)',
           dashed: true
         });
       }
@@ -512,6 +687,40 @@ const modalVisible = ref(false);
 const modalIndividuo = ref(null);
 function abrirModal(node) {
   const raw = node.raw || {};
+  // Mostrar ambos tipos de padres en el modal
+  let padres = (raw._parents||[]).map(p => p.name || p.label || p.id);
+  if (raw._stepRelations && gedcomData.value) {
+    Object.values(raw._stepRelations).forEach(rel => {
+      if (rel.parentId && !padres.includes(rel.parentId)) {
+        const padrastro = gedcomData.value.individuals[rel.parentId];
+        if (padrastro) padres.push((padrastro.name || padrastro.label || padrastro.id) + ' (padrastro/madrastra)');
+      }
+    });
+  }
+  padres = padres.filter((p, idx, arr) => arr.indexOf(p) === idx);
+
+  // Hermanos biológicos
+  let hermanos = (raw._siblings||[]).map(h => h.name || h.label || h.id);
+  // Hermanastros: hijos de padrastros/madrastras que no sean el propio individuo ni ya estén en hermanos
+  if (raw._stepRelations && gedcomData.value) {
+    Object.values(raw._stepRelations).forEach(rel => {
+      if (rel.parentId) {
+        const padrastro = gedcomData.value.individuals[rel.parentId];
+        if (padrastro && padrastro._children) {
+          padrastro._children.forEach(hijastro => {
+            if (
+              hijastro.id !== node.id &&
+              !hermanos.includes(hijastro.name || hijastro.label || hijastro.id)
+            ) {
+              hermanos.push((hijastro.name || hijastro.label || hijastro.id) + ' (hermanastro/a)');
+            }
+          });
+        }
+      }
+    });
+  }
+  hermanos = hermanos.filter((h, idx, arr) => arr.indexOf(h) === idx);
+
   modalIndividuo.value = {
     name: node.fullName || node.label,
     id: node.id,
@@ -525,8 +734,8 @@ function abrirModal(node) {
     nationality: raw.nationality,
     email: raw.email,
     notes: Array.isArray(raw.notes) ? raw.notes.join('; ') : raw.notes,
-    parents: (raw._parents||[]).map(p => p.name || p.label || p.id),
-    siblings: (raw._siblings||[]).map(h => h.name || h.label || h.id),
+    parents: padres,
+    siblings: hermanos,
     children: (raw._children||[]).map(h => h.name || h.label || h.id),
     spouses: (raw._spouses||[]).map(s => s.name || s.label || s.id),
     photo: getNodePhoto(node),
@@ -592,14 +801,11 @@ function handleFullscreenChange() {
 }
 
 const showPersonSelector = ref(false);
+const showConventions = ref(false);
 
 onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
   document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-  document.addEventListener('msfullscreenchange', handleFullscreenChange);
-});
-
-onUnmounted(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
   document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
   document.removeEventListener('msfullscreenchange', handleFullscreenChange);
@@ -615,6 +821,46 @@ function onFooterFullscreen() {
     if (el.requestFullscreen) el.requestFullscreen();
     else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     else if (el.msRequestFullscreen) el.msRequestFullscreen();
+  }
+}
+
+function getNodeColor(node) {
+  switch (node.role) {
+    case 'central':
+      return 'var(--color-central, #e3f2fd)';
+    case 'ancestro':
+      return 'var(--color-ancestro, #fffde7)';
+    case 'padrastro':
+      return 'var(--color-padrastro, #ffe082)';
+    case 'hermano':
+      return 'var(--color-hermano, #e8f5e9)';
+    case 'conyuge':
+      return 'var(--color-conyuge, #fce4ec)';
+    case 'exconyuge':
+      return 'var(--color-exconyuge, #ffe0e0)';
+    case 'descendiente':
+      return 'var(--color-descendiente, #e0f2f1)';
+    default:
+      return '#fff';
+  }
+}
+
+function getLineColor(line) {
+  switch (line.color) {
+    case '#fbc02d':
+      return 'var(--color-linea-biologica, #fbc02d)';
+    case '#ffb300':
+      return 'var(--color-linea-politica, #ffb300)';
+    case '#ec407a':
+      return 'var(--color-linea-pareja, #ec407a)';
+    case '#ff8a80':
+      return 'var(--color-linea-expareja, #ff8a80)';
+    case '#66bb6a':
+      return 'var(--color-linea-hermano, #66bb6a)';
+    case '#0097a7':
+      return 'var(--color-linea-descendiente, #0097a7)';
+    default:
+      return line.color;
   }
 }
 </script>
@@ -642,7 +888,10 @@ function onFooterFullscreen() {
 }
 .svg-responsive-container {
   width: 100vw;
+  height: 100vh;
+  min-height: 100dvh;
   overflow-x: auto;
+  overflow-y: auto;
   flex: 1 1 auto;
   display: flex;
   justify-content: center;
@@ -656,13 +905,33 @@ svg {
   background: #f5f5f5;
   border: 1px solid #ddd;
   max-width: 100vw;
-  height: auto;
+  max-height: 100vh;
+  height: 100vh;
 }
-@media (max-width: 600px) {
+@media (max-width: 900px) {
+  .svg-responsive-container {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
   svg {
-    width: 98vw !important;
+    width: 100vw !important;
     min-width: 600px;
     max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+@media (max-width: 600px) {
+  .svg-responsive-container {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+  svg {
+    width: 100vw !important;
+    min-width: 320px;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
   }
 }
 .search-input {
@@ -851,5 +1120,78 @@ svg {
     padding: 10px 8px 8px 8px;
     font-size: 14px;
   }
+}
+.panel-convenciones {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 2100;
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px 22px 14px 22px;
+  box-shadow: 0 2px 12px rgba(60,60,60,0.13);
+  min-width: 260px;
+  max-width: 340px;
+  font-size: 15px;
+}
+.conv-title {
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+.conv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.conv-box {
+  display: inline-block;
+  width: 28px;
+  height: 18px;
+  border-radius: 8px;
+  border: 2px solid var(--color-border, #333);
+}
+.conv-box.central {
+  background: var(--color-central, #e3f2fd);
+  border-color: var(--color-central-border, #3949ab);
+}
+.conv-box.padre {
+  background: var(--color-padre, #fffde7);
+}
+.conv-box.padrastro {
+  background: var(--color-padrastro, #ffe082);
+}
+.conv-box.hermano {
+  background: var(--color-hermano, #e8f5e9);
+}
+.conv-box.conyuge {
+  background: var(--color-conyuge, #fce4ec);
+}
+.conv-box.exconyuge {
+  background: var(--color-exconyuge, #ffe0e0);
+}
+.conv-box.hijo {
+  background: var(--color-hijo, #e0f2f1);
+}
+.conv-line {
+  display: inline-block;
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+}
+.conv-line.biologica {
+  background: var(--color-linea-biologica, #fbc02d);
+}
+.conv-line.politica {
+  background: var(--color-linea-politica, #ffb300);
+  border-bottom: 2px dashed var(--color-linea-politica, #ffb300);
+}
+.conv-line.pareja {
+  background: var(--color-linea-pareja, #ec407a);
+}
+.conv-line.expareja {
+  background: var(--color-linea-expareja, #ff8a80);
+  border-bottom: 2px dashed var(--color-linea-expareja, #ff8a80);
 }
 </style>

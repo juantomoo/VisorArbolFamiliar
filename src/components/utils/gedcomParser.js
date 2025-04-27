@@ -49,6 +49,11 @@ export function parseGedcom(gedcomString) {
     let currentFam = null;
     let currentEvent = null;
     let currentEventType = null;
+    // --- NUEVO: Para hijastros/padrastros ---
+    let lastFamcId = null;
+    let lastChildId = null;
+    let lastChildFrel = null;
+    let lastChildMrel = null;
     lines.forEach((line, idx) => {
         line = line.trim();
         if (!line) return;
@@ -64,6 +69,10 @@ export function parseGedcom(gedcomString) {
             currentFam = null;
             currentEvent = null;
             currentEventType = null;
+            lastFamcId = null;
+            lastChildId = null;
+            lastChildFrel = null;
+            lastChildMrel = null;
             if (tagOrId.startsWith('@') && tagOrId.endsWith('@')) {
                 if (value === 'INDI') {
                     currentIndi = individuals[tagOrId] = {
@@ -72,6 +81,7 @@ export function parseGedcom(gedcomString) {
                         events: [],
                         famc: null,
                         fams: [],
+                        famcRelations: {}, // NUEVO: para mapear FAMC a { _FREL, _MREL }
                         _familiesAsChild: [],
                         _familiesAsSpouse: [],
                         _parents: [],
@@ -125,6 +135,7 @@ export function parseGedcom(gedcomString) {
                         break;
                     case 'FAMC':
                         currentIndi.famc = value;
+                        lastFamcId = value;
                         break;
                     case 'FAMS':
                         currentIndi.fams.push(value);
@@ -134,13 +145,17 @@ export function parseGedcom(gedcomString) {
                         currentIndi.objs.push(value);
                         break;
                     default:
-                        // Otros campos de nivel 1
                         break;
+                }
+            } else if (level === 2 && lastFamcId) {
+                // Guarda _FREL y _MREL asociados a la última FAMC
+                if (tagOrId === '_FREL' || tagOrId === '_MREL') {
+                    if (!currentIndi.famcRelations[lastFamcId]) currentIndi.famcRelations[lastFamcId] = {};
+                    currentIndi.famcRelations[lastFamcId][tagOrId] = value;
                 }
             } else if (level === 2 && currentEvent) {
                 currentEvent.lines.push(line);
                 currentEvent.attrs[tagOrId.toLowerCase()] = value;
-                // Si es BIRT o DEAT, también copia a birth/death directo
                 if (currentEventType === 'BIRT' && currentIndi.birth) {
                     currentIndi.birth[tagOrId.toLowerCase()] = value;
                 } else if (currentEventType === 'DEAT' && currentIndi.death) {
@@ -148,7 +163,6 @@ export function parseGedcom(gedcomString) {
                 }
             } else if (level > 2 && currentEvent) {
                 currentEvent.lines.push(line);
-                // Guarda atributos anidados como sub-objeto
                 if (!currentEvent.attrs[tagOrId.toLowerCase()]) {
                     currentEvent.attrs[tagOrId.toLowerCase()] = value;
                 }
@@ -166,6 +180,9 @@ export function parseGedcom(gedcomString) {
                         break;
                     case 'CHIL':
                         currentFam.chil.push(value);
+                        lastChildId = value;
+                        lastChildFrel = null;
+                        lastChildMrel = null;
                         break;
                     case 'MARR':
                     case 'DIV':
@@ -178,6 +195,21 @@ export function parseGedcom(gedcomString) {
                         break;
                     default:
                         break;
+                }
+            } else if (level === 2 && lastChildId) {
+                if (tagOrId === '_FREL') {
+                    lastChildFrel = value;
+                } else if (tagOrId === '_MREL') {
+                    lastChildMrel = value;
+                }
+                if ((lastChildFrel && lastChildFrel.toLowerCase() === 'step') || (lastChildMrel && lastChildMrel.toLowerCase() === 'step')) {
+                    if (!currentFam._stepRelations) currentFam._stepRelations = {};
+                    let parentId = null;
+                    if (lastChildFrel && lastChildFrel.toLowerCase() === 'step' && currentFam.husb) parentId = currentFam.husb;
+                    if (lastChildMrel && lastChildMrel.toLowerCase() === 'step' && currentFam.wife) parentId = currentFam.wife;
+                    if (parentId) {
+                        currentFam._stepRelations[parentId + '-' + lastChildId] = { parentId, childId: lastChildId };
+                    }
                 }
             } else if (level === 2 && currentEvent) {
                 currentEvent.lines.push(line);
@@ -217,17 +249,40 @@ export function parseGedcom(gedcomString) {
                 const spouseId = (familyAsSpouse.husb === indi.id) ? familyAsSpouse.wife : familyAsSpouse.husb;
                 if (spouseId && individuals[spouseId]) {
                     // Determinar si la relación está activa o terminada
-                    const isEnded = familyAsSpouse.events.some(ev =>
-                        ["DIV", "SEPARATION", "DIVORCE", "SEP"].includes(ev.type?.toUpperCase())
-                    );
+                    // Revisar eventos tipo DIV, SEPARATION, o EVEN con TYPE Separation/Divorce
+                    let isEnded = false;
+                    for (const ev of familyAsSpouse.events) {
+                        const evType = (ev.type || '').toUpperCase();
+                        if (["DIV", "SEPARATION", "DIVORCE", "SEP"].includes(evType)) {
+                            isEnded = true;
+                            break;
+                        }
+                        // GEDCOM: Separación como EVEN + TYPE Separation
+                        if (evType === 'EVEN') {
+                            // TYPE puede estar como atributo o como subevento
+                            if (ev.attrs && ev.attrs.type && (ev.attrs.type + '').toLowerCase().includes('separ')) {
+                                isEnded = true;
+                                break;
+                            }
+                            // Buscar TYPE en las líneas del evento
+                            if (ev.lines) {
+                                for (const l of ev.lines) {
+                                    if (l.toLowerCase().includes('type separation')) {
+                                        isEnded = true;
+                                        break;
+                                    }
+                                }
+                                if (isEnded) break;
+                            }
+                        }
+                    }
+                    // Eliminar de _spouses si ya estaba (por si el parser anterior lo puso)
+                    indi._spouses = indi._spouses.filter(sp => sp.id !== spouseId);
+                    indi._exSpouses = indi._exSpouses.filter(sp => sp.id !== spouseId);
                     if (isEnded) {
-                        if (!indi._exSpouses.some(sp => sp.id === spouseId)) {
-                            indi._exSpouses.push(individuals[spouseId]);
-                        }
+                        indi._exSpouses.push(individuals[spouseId]);
                     } else {
-                        if (!indi._spouses.some(sp => sp.id === spouseId)) {
-                            indi._spouses.push(individuals[spouseId]);
-                        }
+                        indi._spouses.push(individuals[spouseId]);
                     }
                 }
                 // Añadir hijos de esta unión
@@ -251,6 +306,50 @@ export function parseGedcom(gedcomString) {
                 }
             }
         });
+    });
+
+    // --- NUEVO: Detectar relaciones hijastro/padrastro robustamente ---
+    Object.values(families).forEach(fam => {
+        if (!fam.husb && !fam.wife) return;
+        fam.chil.forEach(childId => {
+            const child = individuals[childId];
+            if (!child) return;
+            const rels = child.famcRelations && child.famcRelations[fam.id];
+            if (rels) {
+                if (fam.husb && rels['_FREL'] && rels['_FREL'].toLowerCase() === 'step') {
+                    // Hijo es hijastro del esposo
+                    if (!fam._stepRelations) fam._stepRelations = {};
+                    fam._stepRelations[fam.husb + '-' + childId] = { parentId: fam.husb, childId };
+                }
+                if (fam.wife && rels['_MREL'] && rels['_MREL'].toLowerCase() === 'step') {
+                    // Hijo es hijastro de la esposa
+                    if (!fam._stepRelations) fam._stepRelations = {};
+                    fam._stepRelations[fam.wife + '-' + childId] = { parentId: fam.wife, childId };
+                }
+            }
+        });
+    });
+
+    // --- NUEVO: Propagar relaciones de hijastros/padrastros a los individuos ---
+    Object.values(families).forEach(fam => {
+        if (fam._stepRelations) {
+            Object.values(fam._stepRelations).forEach(rel => {
+                const parent = individuals[rel.parentId];
+                const child = individuals[rel.childId];
+                if (parent && child) {
+                    // Añadir hijastro al padrastro/madrastra
+                    if (!parent._stepChildren.some(ch => ch.id === child.id)) {
+                        parent._stepChildren.push(child);
+                    }
+                    // Añadir relación al campo _stepRelations del padrastro/madrastra
+                    if (!parent._stepRelations) parent._stepRelations = {};
+                    parent._stepRelations[rel.parentId + '-' + rel.childId] = rel;
+                    // (Opcional) Añadir relación al campo _stepRelations del hijastro
+                    if (!child._stepRelations) child._stepRelations = {};
+                    child._stepRelations[rel.parentId + '-' + rel.childId] = rel;
+                }
+            });
+        }
     });
 
     // Enlazar familias con los objetos individuo
@@ -286,7 +385,7 @@ export function parseGedcom(gedcomString) {
     console.log('DEBUG individuos parseados:', safeStringify(individuals));
     // DEBUG: Mostrar todas las familias parseadas
     console.log('DEBUG familias parseadas:', safeStringify(families));
-    return { individuals, families };
+    return { individuals, families, multimedia };
 }
 
 // Función auxiliar para encontrar un individuo inicial (p.ej., el primero)

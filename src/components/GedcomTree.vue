@@ -152,10 +152,10 @@
            </template>
          </template>
 
-         <v-list-item v-if="selectedNode._parents && selectedNode._parents.length">
+         <v-list-item v-if="todosLosPadres && todosLosPadres.length">
           <v-list-item-title><strong>Padres:</strong></v-list-item-title>
           <v-list class="ml-4" density="compact">
-            <v-list-item v-for="parent in selectedNode._parents" :key="parent.id">
+            <v-list-item v-for="parent in todosLosPadres" :key="parent.id">
             <v-list-item-title>{{ parent.name || 'Desconocido' }}</v-list-item-title>
             </v-list-item>
           </v-list>
@@ -336,20 +336,35 @@ const graphTypes = [
 
 // --- Computed Properties ---
 
+// Computed para padres biológicos y padrastros
+const todosLosPadres = computed(() => {
+  if (!selectedNode.value) return [];
+  const padres = selectedNode.value._parents ? [...selectedNode.value._parents] : [];
+  // Buscar padrastros desde _stepRelations (si existen)
+  if (selectedNode.value._stepRelations && individualsMap.value.size) {
+    Object.values(selectedNode.value._stepRelations).forEach(rel => {
+      if (rel.parentId && !padres.some(p => p.id === rel.parentId)) {
+        const padrastro = individualsMap.value.get(rel.parentId);
+        if (padrastro) padres.push(padrastro);
+      }
+    });
+  }
+  // Evita duplicados por seguridad
+  return padres.filter((p, idx, arr) => arr.findIndex(pp => pp.id === p.id) === idx);
+});
+
 // Calcula los hermanos del nodo seleccionado para el modal
 const hermanos = computed(() => {
-  if (!selectedNode.value || !selectedNode.value._parents) return [];
+  if (!selectedNode.value) return [];
   const siblings = new Set();
-  selectedNode.value._parents.forEach(parent => {
+  todosLosPadres.value.forEach(parent => {
     // Asegúrate de que el padre exista en el mapa principal para obtener sus hijos actualizados
     const fullParentData = individualsMap.value.get(parent.id);
     if (fullParentData && fullParentData.children) {
       fullParentData.children.forEach(childRef => {
-          // Compara IDs, asegurándose de que no es el nodo seleccionado
         if (childRef.id && selectedNode.value.id && childRef.id !== selectedNode.value.id) {
-            // Añade la referencia completa del hermano desde el mapa si existe
-            const siblingNode = individualsMap.value.get(childRef.id);
-            if(siblingNode) siblings.add(siblingNode);
+          const siblingNode = individualsMap.value.get(childRef.id);
+          if(siblingNode) siblings.add(siblingNode);
         }
       });
     }

@@ -30,6 +30,25 @@
   /* Fondo y bordes */
   --graph-container-border: rgba(0, 0, 0, 0.12);
   --graph-tooltip-bg: rgba(255, 255, 255, 0.95);
+
+  /* Colores globales para el árbol genealógico */
+  --color-central: #e3f2fd;
+  --color-central-border: #5863ac;
+  --color-ancestro: #fffde7;
+  --color-padre: #ffe082;
+  --color-padrastro: #fffde7;
+  --color-hermano: #e8f5e9;
+  --color-conyuge: #fce4ec;
+  --color-exconyuge: #141111;
+  --color-hijo: #e0f2f1;
+  --color-descendiente: #e0f2f1;
+  --color-linea-biologica: #ffb300;
+  --color-linea-politica: #fbc02d;
+  --color-linea-pareja: #ec407a;
+  --color-linea-expareja: #ff8a80;
+  --color-linea-hermano: #66bb6a;
+  --color-linea-descendiente: #0097a7;
+  --color-border: #b4b4b4;
 }
 
 /* Variables para tema oscuro */
@@ -63,6 +82,16 @@
 .person-box.graph-child-node { fill: var(--graph-child-link); }
 .person-box.graph-sibling-node { fill: var(--graph-other-link); }
 .person-box.graph-other-node { fill: var(--graph-other-link); }
+
+.svg-node.conyuge {
+  fill: #fce4ec !important;
+  stroke: #ec407a !important;
+}
+.svg-node.exconyuge {
+  fill: #ffe0e0 !important;
+  stroke: #ff8a80 !important;
+  stroke-dasharray: 4 2;
+}
 
 a {
   font-weight: 500;
