@@ -2,7 +2,7 @@
   <div class="hourglass-svg-wrapper" role="main" aria-label="Diagrama árbol familiar">
     <div ref="diagramContainerRef" class="diagram-container">
       <div class="svg-responsive-container" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
-        <svg ref="svgRef" :width="svgWidth" :height="svgHeight" @wheel.prevent="onWheel" @mousedown="onSvgMousedown" style="background:#f5f5f5" tabindex="0" aria-label="Árbol genealógico">
+        <svg ref="svgRef" :width="svgWidth" :height="svgHeight" @wheel.prevent="onWheel" @mousedown="onSvgMousedown" class="arbol-svg" tabindex="0" aria-label="Árbol genealógico">
           <g :transform="svgTransform">
             <!-- Líneas -->
             <line v-for="(line, i) in lines" :key="'l'+i" :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2" :stroke="getLineColor(line)" :stroke-dasharray="line.dashed ? '4 2' : 'none'" stroke-width="2" />
@@ -14,30 +14,28 @@
                     :fill="getNodeColor(node)"
                     :stroke="node.isCentral ? 'var(--color-central-border, #3949ab)' : 'var(--color-border, #333)'"
                     :stroke-width="node.isCentral ? 4 : 2"
-                    rx="20"
+                    rx="5"
                     :class="['svg-node', { conyuge: node.role === 'conyuge', exconyuge: node.role === 'exconyuge' }]" />
               <!-- Nombre multilinea -->
               <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+10" :width="nodeW-20" :height="60">
-                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
-                  <span style="font-size:18px;font-weight:600;word-break:break-word;white-space:pre-line;text-align:center;line-height:1.2;">
-                    {{ node.fullName || node.label }}
-                  </span>
+                <div class="node-label-container">
+                  <span class="node-label">{{ node.fullName || node.label }}</span>
                 </div>
               </foreignObject>
               <!-- Foto debajo del nombre -->
               <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+70" :width="nodeW-20" :height="60">
-                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
+                <div class="node-photo-container">
                   <img
                     v-if="getNodePhoto(node)"
                     :src="getNodePhoto(node)"
                     alt="Foto"
-                    style="max-width:48px;max-height:48px;border-radius:50%;object-fit:cover;border:1.5px solid #bbb;"
+                    class="node-photo"
                   />
                 </div>
               </foreignObject>
               <!-- Fechas y lugares debajo de la foto -->
               <foreignObject :x="-(nodeW/2)+10" :y="-(nodeH/2)+135" :width="nodeW-20" :height="60">
-                <div style="margin-top:6px;font-size:14px;color:#444;text-align:center;line-height:1.1;">
+                <div class="node-dates">
                   <div>
                     <span>Nac: {{ node.raw?.birth?.date || 'Sin fecha' }}<span v-if="node.raw?.birth?.place">, {{ node.raw.birth.place }}</span></span>
                   </div>
@@ -48,7 +46,7 @@
               </foreignObject>
               <!-- Botón ver más -->
               <foreignObject :x="-(nodeW/2)" :y="(nodeH/2)-40" :width="nodeW" height="40">
-                <div style="display:flex;justify-content:center;align-items:center;width:100%;height:38px;">
+                <div class="ver-mas-btn-container">
                   <button class="ver-mas-btn" @click.stop="abrirModal(node)">ver más información</button>
                 </div>
               </foreignObject>
@@ -565,8 +563,7 @@ function buildHourglass() {
       l.push({
         x1: from.x,
         y1: from.y,
-        x2: to.x,
-        y2: to.y,
+        x2: to.y,
         color: parent._isStep ? 'var(--color-linea-politica, #ffb300)' : 'var(--color-linea-biologica, #fbc02d)',
         dashed: !!parent._isStep
       });
@@ -961,45 +958,7 @@ svg {
 .export-btn:hover {
   background: #283593;
 }
-.fullscreen-btn {
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  padding: 6px 16px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.fullscreen-btn:hover {
-  background: #0d47a1;
-}
-.svg-node {
-  filter: drop-shadow(0 2px 8px rgba(60,60,60,0.10));
-  transition: filter 0.2s, stroke 0.2s;
-}
-.svg-node:hover {
-  filter: drop-shadow(0 4px 16px rgba(60,60,60,0.18));
-  stroke: #1976d2 !important;
-}
-.svg-node.central {
-  stroke: #3949ab;
-  stroke-width: 4;
-}
-.ver-mas-btn {
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 2px 10px;
-  font-size: 13px;
-  cursor: pointer;
-  margin-top: 2px;
-  transition: background 0.2s;
-}
-.ver-mas-btn:hover {
-  background: #0d47a1;
-}
+
 .fab-controls {
   position: absolute;
   right: 24px;
@@ -1193,5 +1152,50 @@ svg {
 .conv-line.expareja {
   background: var(--color-linea-expareja, #ff8a80);
   border-bottom: 2px dashed var(--color-linea-expareja, #ff8a80);
+}
+.node-label-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.node-label {
+  font-size: 18px;
+  font-weight: 600;
+  word-break: break-word;
+  white-space: pre-line;
+  text-align: center;
+  line-height: 1.2;
+}
+.node-photo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.node-photo {
+  max-width: 48px;
+  max-height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #bbb;
+}
+.node-dates {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #444;
+  text-align: center;
+  line-height: 1.1;
+}
+.ver-mas-btn-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 38px;
 }
 </style>

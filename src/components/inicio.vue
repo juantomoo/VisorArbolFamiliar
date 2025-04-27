@@ -97,7 +97,7 @@ function onFileChange(e) {
 }
 
 async function loadGRFile() {
-  if (grCode.value.trim() === 'GR2025') {
+  if (grCode.value.trim() === '2025') {
     const response = await fetch('/gomezrivera.ged');
     if (response.ok) {
       protectedGedcomContent.value = await response.text();
