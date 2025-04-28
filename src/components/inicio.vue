@@ -51,7 +51,7 @@
               <v-icon start>mdi-family-tree</v-icon>
               Diagrama árbol
             </v-btn>
-            <v-btn color="grey" block class="mb-2" disabled>
+            <v-btn color="primary" block class="mb-2" :disabled="!gedcomContent" @click="goToFuerza">
               <v-icon start>mdi-graph</v-icon>
               Diagrama fuerza
             </v-btn>
@@ -130,6 +130,11 @@ function useProtectedFile() {
 function goToArbol() {
   localStorage.setItem('gedcomContent', gedcomContent.value);
   router.push({ name: 'vistaFamiliar' });
+}
+
+function goToFuerza() {
+  localStorage.setItem('gedcomContent', gedcomContent.value);
+  router.push({ name: 'diagramaFuerza' });
 }
 </script>
 

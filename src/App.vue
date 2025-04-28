@@ -20,9 +20,9 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue';
-import GedcomTree from './components/GedcomTree.vue';
 import { useTheme } from 'vuetify';
 import VistaFamiliar from './components/vistaFamiliar.vue';
+import GedcomTree from './components/GedcomTree.vue';
 import HeaderVue from './components/header.vue';
 import FooterVue from './components/footer.vue';
 import { useRoute } from 'vue-router';

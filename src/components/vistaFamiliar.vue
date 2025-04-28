@@ -803,6 +803,10 @@ const showConventions = ref(false);
 onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
   document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+  document.addEventListener('msfullscreenchange', handleFullscreenChange);
+});
+
+onUnmounted(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
   document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
   document.removeEventListener('msfullscreenchange', handleFullscreenChange);
@@ -810,15 +814,16 @@ onMounted(() => {
 
 function onFooterFullscreen() {
   const el = diagramContainerRef.value;
-  if (isFullscreen.value) {
-    if (document.exitFullscreen) document.exitFullscreen();
-    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    else if (document.msExitFullscreen) document.msExitFullscreen();
-  } else {
+  if (!isFullscreen.value) { // Si no está en fullscreen, entrar
     if (el.requestFullscreen) el.requestFullscreen();
     else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     else if (el.msRequestFullscreen) el.msRequestFullscreen();
+  } else { // Si está en fullscreen, salir
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    else if (document.msExitFullscreen) document.msExitFullscreen();
   }
+  // Ya no es necesario actualizar isFullscreen.value aquí, el listener se encarga
 }
 
 function getNodeColor(node) {
