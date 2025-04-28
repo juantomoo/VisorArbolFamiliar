@@ -684,39 +684,80 @@ const modalVisible = ref(false);
 const modalIndividuo = ref(null);
 function abrirModal(node) {
   const raw = node.raw || {};
-  // Mostrar ambos tipos de padres en el modal
-  let padres = (raw._parents||[]).map(p => p.name || p.label || p.id);
-  if (raw._stepRelations && gedcomData.value) {
-    Object.values(raw._stepRelations).forEach(rel => {
-      if (rel.parentId && !padres.includes(rel.parentId)) {
-        const padrastro = gedcomData.value.individuals[rel.parentId];
-        if (padrastro) padres.push((padrastro.name || padrastro.label || padrastro.id) + ' (padrastro/madrastra)');
-      }
-    });
-  }
-  padres = padres.filter((p, idx, arr) => arr.indexOf(p) === idx);
+  const gedcom = gedcomData.value;
+  if (!gedcom) return; // Asegurarse de que gedcomData está cargado
 
-  // Hermanos biológicos
-  let hermanos = (raw._siblings||[]).map(h => h.name || h.label || h.id);
-  // Hermanastros: hijos de padrastros/madrastras que no sean el propio individuo ni ya estén en hermanos
-  if (raw._stepRelations && gedcomData.value) {
+  // --- PADRES (Biológicos y Padrastros) ---
+  let padres = [];
+  const parentIds = new Set();
+  (raw._parents || []).forEach(p => {
+    if (!parentIds.has(p.id)) {
+      padres.push(p.name || p.label || p.id);
+      parentIds.add(p.id);
+    }
+  });
+
+  const stepParentIds = new Set();
+  if (raw._stepRelations) {
     Object.values(raw._stepRelations).forEach(rel => {
-      if (rel.parentId) {
-        const padrastro = gedcomData.value.individuals[rel.parentId];
-        if (padrastro && padrastro._children) {
-          padrastro._children.forEach(hijastro => {
-            if (
-              hijastro.id !== node.id &&
-              !hermanos.includes(hijastro.name || hijastro.label || hijastro.id)
-            ) {
-              hermanos.push((hijastro.name || hijastro.label || hijastro.id) + ' (hermanastro/a)');
-            }
-          });
+      // Asegurarse de que esta relación es *hacia* este individuo (él es el hijastro)
+      if (rel.childId === node.id && rel.parentId) {
+        const stepParent = gedcom.individuals[rel.parentId];
+        if (stepParent && !parentIds.has(stepParent.id)) {
+          const stepParentName = stepParent.name || stepParent.label || stepParent.id;
+          padres.push(`${stepParentName} (padrastro/madrastra)`);
+          stepParentIds.add(rel.parentId); // Guardar ID para buscar hermanastros
+          parentIds.add(stepParent.id); // Evitar duplicados si es padre y padrastro?
         }
       }
     });
   }
-  hermanos = hermanos.filter((h, idx, arr) => arr.indexOf(h) === idx);
+
+  // --- HERMANOS (Biológicos) ---
+  const fullSiblings = (raw._siblings || []).map(h => h.name || h.label || h.id);
+  const fullSiblingIds = new Set((raw._siblings || []).map(h => h.id));
+
+  // --- HERMANASTROS (Hijos de padrastros/madrastras que NO son hermanos biológicos) ---
+  const stepSiblings = [];
+  stepParentIds.forEach(stepParentId => {
+    const stepParent = gedcom.individuals[stepParentId];
+    if (stepParent && stepParent._children) {
+      stepParent._children.forEach(child => {
+        // Es hermanastro si:
+        // 1. No es el individuo actual
+        // 2. No es un hermano biológico ya listado
+        if (child.id !== node.id && !fullSiblingIds.has(child.id)) {
+          const stepSiblingName = child.name || child.label || child.id;
+          if (!stepSiblings.includes(stepSiblingName)) { // Evitar duplicados
+            stepSiblings.push(stepSiblingName);
+          }
+        }
+      });
+    }
+    // También considerar los hijastros del padrastro/madrastra si existen
+    if (stepParent && stepParent._stepChildren) {
+        stepParent._stepChildren.forEach(stepChild => {
+            if (stepChild.id !== node.id && !fullSiblingIds.has(stepChild.id)) {
+                const stepSiblingName = stepChild.name || stepChild.label || stepChild.id;
+                 if (!stepSiblings.includes(stepSiblingName)) {
+                    stepSiblings.push(stepSiblingName);
+                 }
+            }
+        });
+    }
+  });
+
+  // --- HIJOS (Biológicos) ---
+  const biologicalChildren = (raw._children || []).map(h => h.name || h.label || h.id);
+
+  // --- HIJASTROS (Los que tienen a este nodo como padrastro/madrastra) ---
+  const stepChildren = (raw._stepChildren || []).map(h => h.name || h.label || h.id);
+
+  // --- PAREJAS (Actuales) ---
+  const spouses = (raw._spouses || []).map(s => s.name || s.label || s.id);
+
+  // --- EXPAREJAS ---
+  const exSpouses = (raw._exSpouses || []).map(s => s.name || s.label || s.id);
 
   modalIndividuo.value = {
     name: node.fullName || node.label,
@@ -726,15 +767,18 @@ function abrirModal(node) {
     birthPlace: raw.birth?.place,
     death: raw.death?.date,
     deathPlace: raw.death?.place,
-    occupation: raw.occupation || (raw.occupation && raw.occupation[0]),
+    occupation: raw.occupation || (Array.isArray(raw.occupation) ? raw.occupation[0] : raw.occupation),
     religion: raw.religion,
     nationality: raw.nationality,
     email: raw.email,
     notes: Array.isArray(raw.notes) ? raw.notes.join('; ') : raw.notes,
-    parents: padres,
-    siblings: hermanos,
-    children: (raw._children||[]).map(h => h.name || h.label || h.id),
-    spouses: (raw._spouses||[]).map(s => s.name || s.label || s.id),
+    parents: padres, // Incluye biológicos y padrastros con etiqueta
+    siblings: fullSiblings, // Solo hermanos biológicos
+    stepSiblings: stepSiblings, // Solo hermanastros
+    children: biologicalChildren, // Solo hijos biológicos
+    stepChildren: stepChildren, // Solo hijastros
+    spouses: spouses, // Solo parejas actuales
+    exSpouses: exSpouses, // Solo exparejas
     photo: getNodePhoto(node),
     events: raw.events || []
   };

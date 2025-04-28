@@ -57,23 +57,44 @@
               </v-list-item-title>
             </v-list-item>
             <v-list-item v-if="individuo.siblings && individuo.siblings.length">
-              <v-list-item-title><b>Hermanos:</b>
+              <v-list-item-title><b>Hermanos (biológicos):</b>
                 <ul class="ml-2 mb-0">
                   <li v-for="(h, idx) in individuo.siblings" :key="'h'+idx">{{ h }}</li>
                 </ul>
               </v-list-item-title>
             </v-list-item>
+            <v-list-item v-if="individuo.stepSiblings && individuo.stepSiblings.length">
+              <v-list-item-title><b>Hermanastros:</b>
+                <ul class="ml-2 mb-0">
+                  <li v-for="(hs, idx) in individuo.stepSiblings" :key="'hs'+idx">{{ hs }}</li>
+                </ul>
+              </v-list-item-title>
+            </v-list-item>
             <v-list-item v-if="individuo.children && individuo.children.length">
-              <v-list-item-title><b>Hijos:</b>
+              <v-list-item-title><b>Hijos (biológicos):</b>
                 <ul class="ml-2 mb-0">
                   <li v-for="(c, idx) in individuo.children" :key="'c'+idx">{{ c }}</li>
                 </ul>
               </v-list-item-title>
             </v-list-item>
+            <v-list-item v-if="individuo.stepChildren && individuo.stepChildren.length">
+              <v-list-item-title><b>Hijastros:</b>
+                <ul class="ml-2 mb-0">
+                  <li v-for="(sc, idx) in individuo.stepChildren" :key="'sc'+idx">{{ sc }}</li>
+                </ul>
+              </v-list-item-title>
+            </v-list-item>
             <v-list-item v-if="individuo.spouses && individuo.spouses.length">
-              <v-list-item-title><b>Cónyuges:</b>
+              <v-list-item-title><b>Parejas (actuales):</b>
                 <ul class="ml-2 mb-0">
                   <li v-for="(s, idx) in individuo.spouses" :key="'s'+idx">{{ s }}</li>
+                </ul>
+              </v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="individuo.exSpouses && individuo.exSpouses.length">
+              <v-list-item-title><b>Exparejas:</b>
+                <ul class="ml-2 mb-0">
+                  <li v-for="(ex, idx) in individuo.exSpouses" :key="'ex'+idx">{{ ex }}</li>
                 </ul>
               </v-list-item-title>
             </v-list-item>
@@ -106,11 +127,13 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch } from 'vue'; // Quitar computed si ya no se usa
+
 const props = defineProps({
   visible: Boolean,
   individuo: Object
 });
+
 const emit = defineEmits(['close']);
 const internalVisible = ref(props.visible);
 watch(() => props.visible, v => { internalVisible.value = v; });
@@ -150,6 +173,7 @@ function formatGedcomDate(dateStr) {
   }
   return dateStr;
 }
+
 </script>
 
 <style scoped>
